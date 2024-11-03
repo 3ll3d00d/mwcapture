@@ -26,121 +26,49 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="amextra.h" />
-    <ClInclude Include="amfilter.h" />
-    <ClInclude Include="cache.h" />
-    <ClInclude Include="checkbmi.h" />
-    <ClInclude Include="combase.h" />
-    <ClInclude Include="cprop.h" />
-    <ClInclude Include="ctlutil.h" />
-    <ClInclude Include="ddmm.h" />
-    <ClInclude Include="dllsetup.h" />
-    <ClInclude Include="dxmperf.h" />
-    <ClInclude Include="fourcc.h" />
-    <ClInclude Include="measure.h" />
-    <ClInclude Include="msgthrd.h" />
-    <ClInclude Include="mtype.h" />
-    <ClInclude Include="outputq.h" />
-    <ClInclude Include="perflog.h" />
-    <ClInclude Include="perfstruct.h" />
-    <ClInclude Include="pstream.h" />
-    <ClInclude Include="pullpin.h" />
-    <ClInclude Include="refclock.h" />
-    <ClInclude Include="reftime.h" />
-    <ClInclude Include="renbase.h" />
-    <ClInclude Include="schedule.h" />
-    <ClInclude Include="seekpt.h" />
-    <ClInclude Include="source.h" />
-    <ClInclude Include="streams.h" />
-    <ClInclude Include="strmctl.h" />
-    <ClInclude Include="sysclock.h" />
-    <ClInclude Include="transfrm.h" />
-    <ClInclude Include="transip.h" />
-    <ClInclude Include="videoctl.h" />
-    <ClInclude Include="vtrans.h" />
-    <ClInclude Include="winctrl.h" />
-    <ClInclude Include="winutil.h" />
-    <ClInclude Include="wxdebug.h" />
-    <ClInclude Include="wxlist.h" />
-    <ClInclude Include="wxutil.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="amextra.cpp" />
-    <ClCompile Include="amfilter.cpp" />
-    <ClCompile Include="amvideo.cpp" />
-    <ClCompile Include="arithutil.cpp" />
-    <ClCompile Include="combase.cpp" />
-    <ClCompile Include="cprop.cpp" />
-    <ClCompile Include="ctlutil.cpp" />
-    <ClCompile Include="ddmm.cpp" />
-    <ClCompile Include="dllentry.cpp" />
-    <ClCompile Include="dllsetup.cpp" />
-    <ClCompile Include="mtype.cpp" />
-    <ClCompile Include="outputq.cpp" />
-    <ClCompile Include="perflog.cpp" />
-    <ClCompile Include="pstream.cpp" />
-    <ClCompile Include="pullpin.cpp" />
-    <ClCompile Include="refclock.cpp" />
-    <ClCompile Include="renbase.cpp" />
-    <ClCompile Include="schedule.cpp" />
-    <ClCompile Include="seekpt.cpp" />
-    <ClCompile Include="source.cpp" />
-    <ClCompile Include="strmctl.cpp" />
-    <ClCompile Include="sysclock.cpp" />
-    <ClCompile Include="transfrm.cpp" />
-    <ClCompile Include="transip.cpp" />
-    <ClCompile Include="videoctl.cpp" />
-    <ClCompile Include="vtrans.cpp" />
-    <ClCompile Include="winctrl.cpp" />
-    <ClCompile Include="winutil.cpp" />
-    <ClCompile Include="wxdebug.cpp" />
-    <ClCompile Include="wxlist.cpp" />
-    <ClCompile Include="wxutil.cpp" />
-  </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{fbc2d6cb-389e-4316-a41f-38b098e27ae1}</ProjectGuid>
-    <RootNamespace>directshowbaseclasses</RootNamespace>
+    <ProjectGuid>{ec914c68-4e3c-4d58-b708-81cbdc374195}</ProjectGuid>
+    <RootNamespace>mwcapture</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -170,40 +98,40 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <LinkIncremental>false</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|Win32'">
-    <LinkIncremental>false</LinkIncremental>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LinkIncremental>true</LinkIncremental>
-  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <TargetExt>.ax</TargetExt>
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|x64'">
+    <TargetExt>.ax</TargetExt>
     <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <TargetExt>.ax</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>WIN32;_DEBUG;MWSOURCEFILTER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile />
+      <AdditionalIncludeDirectories>$(SolutionDir)directshow_baseclasses;$(SolutionDir)mwsdk\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\$(Configuration);$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>LibMWCapture.lib;directshow_baseclasses.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>true</PerUserRedirection>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -212,17 +140,24 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;MWSOURCEFILTER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile />
+      <AdditionalIncludeDirectories>$(SolutionDir)directshow_baseclasses;$(SolutionDir)mwsdk\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\$(Configuration);$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>LibMWCapture.lib;directshow_baseclasses.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>true</PerUserRedirection>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|Win32'">
@@ -231,35 +166,50 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;MWSOURCEFILTER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PrecompiledHeaderFile>
+      </PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>
+      </PrecompiledHeaderOutputFile>
+      <AdditionalIncludeDirectories>$(SolutionDir)directshow_baseclasses;$(SolutionDir)mwsdk\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\Release;$(SolutionDir)$(Platform)\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>LibMWCapture.lib;directshow_baseclasses.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>true</PerUserRedirection>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_DEBUG;MWSOURCEFILTER_EXPORTS;_WINDOWS;_USRDLL;QUILL_LOG_ALL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile />
-      <AdditionalIncludeDirectories>.</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\$(Configuration);$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;strmiids.lib;winmm.lib;ws2_32.lib;LibMWCapture.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>false</PerUserRedirection>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -268,20 +218,27 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_USRDLL;_WINSOCK_DEPRECATED_NO_WARNINGS;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile />
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>Default</LanguageStandard_C>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\$(Configuration);$(SolutionDir)$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;strmiids.lib;winmm.lib;ws2_32.lib;LibMWCapture.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>false</PerUserRedirection>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseWithLogging|x64'">
@@ -290,23 +247,46 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>false</ConformanceMode>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;_USRDLL;_WINSOCK_DEPRECATED_NO_WARNINGS;WIN32_LEAN_AND_MEAN;QUILL_LOG_ALL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <PrecompiledHeaderFile>
       </PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>.</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile>
       </PrecompiledHeaderOutputFile>
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>Default</LanguageStandard_C>
     </ClCompile>
     <Link>
-      <SubSystem>
-      </SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(SolutionDir)mwsdk\lib\$(Platform)\Release;$(SolutionDir)$(Platform)\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;strmiids.lib;winmm.lib;ws2_32.lib;LibMWCapture.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>$(ProjectDir)$(ProjectName).def</ModuleDefinitionFile>
+      <PerUserRedirection>false</PerUserRedirection>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
   </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="lavfilters_side_data.h" />
+    <ClInclude Include="mwcapture.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="mwcapture.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="mwcapture.def" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\directshow_baseclasses\directshow_baseclasses.vcxproj">
+      <Project>{fbc2d6cb-389e-4316-a41f-38b098e27ae1}</Project>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

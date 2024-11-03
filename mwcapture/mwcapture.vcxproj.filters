@@ -15,19 +15,24 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h">
+    <ClInclude Include="lavfilters_side_data.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="pch.h">
+    <ClInclude Include="mwcapture.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="mwcapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="dllmain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="pch.cpp">
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="mwcapture.def">
       <Filter>Source Files</Filter>
-    </ClCompile>
+    </None>
   </ItemGroup>
 </Project>
