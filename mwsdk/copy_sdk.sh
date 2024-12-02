@@ -39,5 +39,6 @@ do
 done
 
 cp "${SDK_DIR}/Runtime/RedistLicense.rtf" .
+cp "${SDK_DIR}/Runtime/MWCaptureRT.exe" .
 
 echo "${SDK_VER}" > VERSION

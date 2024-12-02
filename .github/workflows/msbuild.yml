@@ -2,22 +2,41 @@ name: MSBuild
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:
-    branches: ['*']
+    tags:
+        - '*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
+  create_release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Generate changelog
+      id: changelog
+      uses: metcalfc/changelog-generator@v4.3.1
+      with:
+        myToken: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create release
+      id: create_release
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        body: ${{ steps.changelog.outputs.changelog }}
+        draft: false
+        prerelease: true
+        
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         configuration: [ Debug, Release, ReleaseWithLogging ]
-      fail-fast: false
 
     steps:
     - uses: actions/checkout@v4
@@ -25,10 +44,41 @@ jobs:
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
-    - name: Restore NuGet packages
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: nuget restore ${{env.SOLUTION_FILE_PATH}}
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgJsonGlob: 'mwcapture/vcpkg.json'      
 
+    - name: vcpkg integrate 
+      run: vcpkg integrate install
+      
     - name: Build
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /m /t:Rebuild /p:Configuration=${{matrix.configuration}} ${{env.SOLUTION_FILE_PATH}}
+      working-directory: ${{ env.GITHUB_WORKSPACE }}
+      run: msbuild /t:Rebuild /p:Configuration=${{ matrix.configuration }} 
+
+    - name: Create distribution
+      id: create_dist
+      shell: bash
+      run: |
+        if [[ ${{ matrix.configuration }} == "Debug" ]]
+        then
+          ZIP_NAME="mwcapture-${{ github.ref_name }}-debug.zip"
+          (cd x64/${{ matrix.configuration }}; 7z a ../../${ZIP_NAME} mwcapture.exp)
+        elif [[ ${{ matrix.configuration }} == "Release" ]]
+        then
+          ZIP_NAME="mwcapture-${{ github.ref_name }}.zip"
+        elif [[ ${{ matrix.configuration }} == "ReleaseWithLogging" ]]
+        then
+          ZIP_NAME="mwcapture-${{ github.ref_name }}-release-with-logging.zip"
+        fi
+        7z a ${ZIP_NAME} COPYING
+        (cd x64/${{ matrix.configuration }}; 7z a ../../${ZIP_NAME} mwcapture.ax)
+        (cd mwsdk; 7z ../${ZIP_NAME} RedistLicense.rtf)
+        (cd mwsdk; 7z ../${ZIP_NAME} MWCaptureRT.exe)
+        echo "binary_path=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload asset
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload ${{ github.ref_name }} ${{ steps.create_dist.outputs.binary_path }}
