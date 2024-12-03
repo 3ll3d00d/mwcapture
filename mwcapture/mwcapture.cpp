@@ -1266,15 +1266,25 @@ HRESULT MagewellCapturePin::FillBuffer(IMediaSample* pms)
                     }
                 }
                 mFrameCounter++;
-                if (mSinceLastLog++ >= 10)
+                if (mSinceLastLog++ >= 1000)
                 {
                     mSinceLastLog = 0;
                 }
                 MWGetDeviceTime(h_channel, &mFrameEndTime);
                 auto endTime = mFrameEndTime - mStreamStartTime;
                 auto startTime = endTime - static_cast<long>(mAudioFormat.sampleInterval * MWCAP_AUDIO_SAMPLES_PER_FRAME);
-                auto logLevel = bytesCaptured != sampleSize ? quill::LogLevel::Warning : mSinceLastLog == 0 ? quill::LogLevel::TraceL1 : quill::LogLevel::TraceL3;
-                LOG_DYNAMIC(mLogger, logLevel,"[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+                if (bytesCaptured != sampleSize)
+                {
+                    LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+                }
+            	else if (mSinceLastLog == 0)
+                {
+                    LOG_TRACE_L1(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+                }
+            	else 
+                {
+                    LOG_TRACE_L3(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+                }
                 pms->SetTime(&startTime, &endTime);
                 pms->SetSyncPoint(TRUE);
                 if (mSendMediaType)
