@@ -15,9 +15,26 @@
 #pragma once
 
 #define NOMINMAX
+
+
+#ifndef NO_QUILL
 #include <quill/Logger.h>
 #include <quill/LogMacros.h>
+#include "quill/Frontend.h"
 
+struct CustomFrontendOptions
+{
+    static constexpr quill::QueueType queue_type = quill::QueueType::BoundedDropping;
+    static constexpr uint32_t initial_queue_capacity = 64 * 1024 * 1024; // 64MiB
+    static constexpr uint32_t blocking_queue_retry_interval_ns = 800;
+    static constexpr bool huge_pages_enabled = false;
+};
+using CustomFrontend = quill::FrontendImpl<CustomFrontendOptions>;
+using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
+
+#endif // !NO_QUILL
+
+#include <string>
 #include <windows.h>
 #include <source.h>
 #include <dvdmedia.h>
@@ -26,7 +43,6 @@
 
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
 EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
-
 
 typedef enum {
     PIN_VIDEO_CAPTURE,
@@ -188,8 +204,10 @@ private:
     int mBoardId = -1;
     int mChannelId = -1;
 
+#ifndef NO_QUILL
     std::string mLogPrefix = "MagewellCaptureFilter";
-	quill::Logger* mLogger;
+    CustomLogger* mLogger;
+#endif
 };
 
 /**
@@ -301,8 +319,11 @@ private:
     HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat, const AUDIO_FORMAT* newAudioFormat);
 
 protected:
+#ifndef NO_QUILL
     std::string mLogPrefix;
-    quill::Logger* mLogger;
+    CustomLogger* mLogger;
+#endif
+
     LONGLONG mFrameCounter;
     mw_pin_type mPinType;
     MagewellCaptureFilter* mFilter;

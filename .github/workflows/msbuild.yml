@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        configuration: [ Debug, Release, ReleaseWithLogging ]
+        configuration: [ Debug, Release, ReleaseTrace, ReleaseWarn ]
 
     steps:
     - uses: actions/checkout@v4
@@ -62,14 +62,17 @@ jobs:
       run: |
         if [[ ${{ matrix.configuration }} == "Debug" ]]
         then
-          ZIP_NAME="mwcapture-${{ github.ref_name }}-debug.zip"
+          ZIP_NAME="mwcapture-${{ github.ref_name }}-debug-trace-logging.zip"
           (cd x64/${{ matrix.configuration }}; 7z a ../../${ZIP_NAME} mwcapture.exp)
         elif [[ ${{ matrix.configuration }} == "Release" ]]
         then
           ZIP_NAME="mwcapture-${{ github.ref_name }}.zip"
-        elif [[ ${{ matrix.configuration }} == "ReleaseWithLogging" ]]
+        elif [[ ${{ matrix.configuration }} == "ReleaseTrace" ]]
         then
-          ZIP_NAME="mwcapture-${{ github.ref_name }}-release-with-logging.zip"
+          ZIP_NAME="mwcapture-${{ github.ref_name }}-release-trace-logging.zip"
+        elif [[ ${{ matrix.configuration }} == "ReleaseWarn" ]]
+        then
+          ZIP_NAME="mwcapture-${{ github.ref_name }}-release-warn-logging.zip"
         fi
         7z a ${ZIP_NAME} COPYING
         (cd x64/${{ matrix.configuration }}; 7z a ../../${ZIP_NAME} mwcapture.ax)
