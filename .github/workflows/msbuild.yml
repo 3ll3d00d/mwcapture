@@ -73,8 +73,8 @@ jobs:
         fi
         7z a ${ZIP_NAME} COPYING
         (cd x64/${{ matrix.configuration }}; 7z a ../../${ZIP_NAME} mwcapture.ax)
-        (cd mwsdk; 7z ../${ZIP_NAME} RedistLicense.rtf)
-        (cd mwsdk; 7z ../${ZIP_NAME} MWCaptureRT.exe)
+        (cd mwsdk; 7z a ../${ZIP_NAME} RedistLicense.rtf)
+        (cd mwsdk; 7z a ../${ZIP_NAME} MWCaptureRT.exe)
         echo "binary_path=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
 
     - name: Upload asset
