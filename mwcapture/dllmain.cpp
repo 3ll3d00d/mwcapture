@@ -25,6 +25,14 @@
 
 #define CreateComObject(clsid, iid, var) CoCreateInstance( clsid, NULL, CLSCTX_INPROC_SERVER, iid, (void **)&var);
 
+#if MWCAPTURE_NAME_SUFFIX == 1
+#define FILTER_NAME L"Magewell Pro Capture (Trace)"
+#elif MWCAPTURE_NAME_SUFFIX == 2
+#define FILTER_NAME L"Magewell Pro Capture (Warn)"
+#else
+#define FILTER_NAME L"Magewell Pro Capture"
+#endif
+
 STDAPI AMovieSetupRegisterServer(CLSID clsServer, LPCWSTR szDescription, LPCWSTR szFileName, LPCWSTR szThreadingModel = L"Both", LPCWSTR szServerType = L"InprocServer32");
 
 STDAPI AMovieSetupUnregisterServer(CLSID clsServer);
@@ -48,7 +56,7 @@ STDAPI RegisterFilters(BOOL bRegister)
     HRESULT hr = CoInitialize(0);
     if (bRegister)
     {
-        hr = AMovieSetupRegisterServer(CLSID_MWCAPTURE_FILTER, L"Magewell Pro Capture", achFileName, L"Both", L"InprocServer32");
+        hr = AMovieSetupRegisterServer(CLSID_MWCAPTURE_FILTER, FILTER_NAME, achFileName, L"Both", L"InprocServer32");
     }
 
     if (SUCCEEDED(hr))
@@ -64,7 +72,7 @@ STDAPI RegisterFilters(BOOL bRegister)
                 videoFilter.dwMerit = MERIT_DO_NOT_USE;
                 videoFilter.cPins = 1;
                 videoFilter.rgPins = &sMIPPins[0];
-                hr = fm->RegisterFilter(CLSID_MWCAPTURE_FILTER, L"Magewell Pro Capture", nullptr, &CLSID_VideoInputDeviceCategory, nullptr, &videoFilter);
+                hr = fm->RegisterFilter(CLSID_MWCAPTURE_FILTER, FILTER_NAME, nullptr, &CLSID_VideoInputDeviceCategory, nullptr, &videoFilter);
             }
             else
             {

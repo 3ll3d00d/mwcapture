@@ -81,8 +81,8 @@ const AMOVIESETUP_PIN sMIPPins[] = { sVideoPin, sAudioPin };
 
 constexpr AMOVIESETUP_FILTER sMIPSetup =
 {
-    &CLSID_MWCAPTURE_FILTER,   // Filter CLSID
-    L"MagewellCapture",              // String name
+    &CLSID_MWCAPTURE_FILTER,  // Filter CLSID
+    L"MagewellCapture",       // String name
     MERIT_DO_NOT_USE,         // Filter merit
     2,                        // Number of pins
     sMIPPins                  // Pin information
