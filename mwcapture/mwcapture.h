@@ -14,11 +14,6 @@
  */
 #pragma once
 
-// disable logging where possible
-#ifndef QUILL_LOG_ALL
-#define QUILL_COMPILE_ACTIVE_LOG_LEVEL QUILL_COMPILE_ACTIVE_LOG_LEVEL_WARNING
-#endif
-
 #define NOMINMAX
 #include <quill/Logger.h>
 #include <quill/LogMacros.h>
