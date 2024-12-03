@@ -14,12 +14,6 @@
  */
 #pragma once
 
-// logging
-#ifndef QUILL_LOG_ALL
-#define QUILL_COMPILE_ACTIVE_LOG_LEVEL QUILL_COMPILE_ACTIVE_LOG_LEVEL_WARNING
-#endif
-
-
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
 #include "quill/LogMacros.h"
@@ -915,7 +909,7 @@ HRESULT MagewellCapturePin::LoadVideoSignal(HCHANNEL* pChannel)
         MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_HDR, &pkt);
         if (!mHasHdrInfoFrame)
         {
-            LOG_INFO(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF, pkt.hdrInfoFramePayload.byEOTF);
+            LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF, pkt.hdrInfoFramePayload.byEOTF);
         }
         mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
         mHasHdrInfoFrame = true;
@@ -924,7 +918,7 @@ HRESULT MagewellCapturePin::LoadVideoSignal(HCHANNEL* pChannel)
     {
         if (mHasHdrInfoFrame)
         {
-            LOG_INFO(mLogger, "[{}] HDR Infoframe no longer present", mLogPrefix);
+            LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe no longer present", mLogPrefix);
         }
         mHasHdrInfoFrame = false;
         mVideoSignal.hdrInfo = {};
@@ -1007,7 +1001,7 @@ HRESULT MagewellCapturePin::OnThreadStartPlay()
     {
         LONGLONG now;
         MWGetDeviceTime(mFilter->GetChannelHandle(), &now);
-        LOG_INFO(mLogger, "[{}] Pin worker thread starting at {}, using for stream start time", mLogPrefix, now);
+        LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, using for stream start time", mLogPrefix, now);
         mStreamStartTime = now;
     }
     return S_OK;
@@ -1022,13 +1016,13 @@ HRESULT MagewellCapturePin::DoChangeMediaType(const CMediaType* pmt, const VIDEO
 
     if (newVideoFormat != nullptr)
     {
-        LOG_INFO(mLogger, "[{}] Proposing new video format {} x {} ({}:{}) @ {} Hz in {} bits ({} {} tf: {}) size {} bytes", mLogPrefix, 
+        LOG_WARNING(mLogger, "[{}] Proposing new video format {} x {} ({}:{}) @ {} Hz in {} bits ({} {} tf: {}) size {} bytes", mLogPrefix, 
             newVideoFormat->cx, newVideoFormat->cy, newVideoFormat->aspectX, newVideoFormat->aspectY, newVideoFormat->fps, newVideoFormat->bitDepth, 
             newVideoFormat->pixelStructureName, newVideoFormat->colourFormatName, newVideoFormat->hdrMeta.transferFunction, newVideoFormat->imageSize);
     }
     if (newAudioFormat != nullptr)
     {
-        LOG_INFO(mLogger, "[{}] Proposing new audio format Fs: {} Bits: {} Channels: {} PCM: {}", mLogPrefix, 
+        LOG_WARNING(mLogger, "[{}] Proposing new audio format Fs: {} Bits: {} Channels: {} PCM: {}", mLogPrefix,
             newAudioFormat->fs, newAudioFormat->bitDepth, newAudioFormat->channelCount, newAudioFormat->pcm);
     }
 
@@ -1120,7 +1114,7 @@ HRESULT MagewellCapturePin::DoChangeMediaType(const CMediaType* pmt, const VIDEO
                 hr = m_pAllocator->Commit();
                 if (SUCCEEDED(hr))
                 {
-                    LOG_INFO(mLogger, "[{}] Updated allocator {} bytes {} buffers", props.cbBuffer, props.cBuffers);
+                    LOG_TRACE_L1(mLogger, "[{}] Updated allocator {} bytes {} buffers", props.cbBuffer, props.cBuffers);
                     retVal = S_OK;
                 }
             }
@@ -1339,19 +1333,19 @@ HRESULT MagewellCapturePin::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATO
         int frameSize = MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.bitDepthInBytes * mAudioFormat.channelCount;
         pProperties->cbBuffer = frameSize;
     }
-	LOG_INFO(mLogger, "[{}] MagewellCapturePin::DecideBufferSize size: {} count: {}", mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers);
+	LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::DecideBufferSize size: {} count: {}", mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers);
 
     ALLOCATOR_PROPERTIES actual;
     hr = pIMemAlloc->SetProperties(pProperties, &actual);
 
     if (FAILED(hr))
     {
-        LOG_INFO(mLogger, "[{}] MagewellCapturePin::DecideBufferSize failed to SetProperties result {}", mLogPrefix, hr);
+        LOG_WARNING(mLogger, "[{}] MagewellCapturePin::DecideBufferSize failed to SetProperties result {}", mLogPrefix, hr);
         return hr;
     } 
     if (actual.cbBuffer < pProperties->cbBuffer)
     {
-        LOG_INFO(mLogger, "[{}] MagewellCapturePin::DecideBufferSize actual buffer is {} not {}", mLogPrefix, actual.cbBuffer, pProperties->cbBuffer);
+        LOG_WARNING(mLogger, "[{}] MagewellCapturePin::DecideBufferSize actual buffer is {} not {}", mLogPrefix, actual.cbBuffer, pProperties->cbBuffer);
         return E_FAIL;
     }
 
@@ -1381,7 +1375,9 @@ HRESULT MagewellCapturePin::SetMediaType(const CMediaType* pmt)
 
 HRESULT MagewellCapturePin::OnThreadCreate()
 {
-    LOG_INFO(mLogger, "[{}] MagewellCapturePin::OnThreadCreate", mLogPrefix);
+    quill::Frontend::preallocate();
+
+	LOG_INFO(mLogger, "[{}] MagewellCapturePin::OnThreadCreate", mLogPrefix);
     // Wait Events
     mNotifyEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     const auto h_channel = mFilter->GetChannelHandle();
@@ -1441,7 +1437,7 @@ HRESULT MagewellCapturePin::OnThreadCreate()
 
 HRESULT MagewellCapturePin::OnThreadDestroy()
 {
-    LOG_TRACE_L1(mLogger, "[{}] >>> MagewellCapturePin::OnThreadDestroy", mLogPrefix);
+    LOG_INFO(mLogger, "[{}] >>> MagewellCapturePin::OnThreadDestroy", mLogPrefix);
     if (mNotify)
     {
         MWUnregisterNotify(mFilter->GetChannelHandle(), mNotify);
@@ -1462,7 +1458,7 @@ HRESULT MagewellCapturePin::OnThreadDestroy()
     	}
         CloseHandle(mCaptureEvent);
     }
-    LOG_TRACE_L1(mLogger, "[{}] <<< MagewellCapturePin::OnThreadDestroy", mLogPrefix);
+    LOG_INFO(mLogger, "[{}] <<< MagewellCapturePin::OnThreadDestroy", mLogPrefix);
     return S_OK;
 }
 
@@ -1497,7 +1493,7 @@ void MagewellCapturePin::SetStartTime(LONGLONG streamStartTime)
 {
     if (mStreamStartTime == 0)
     {
-        LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::SetStartTime at {}", mLogPrefix, streamStartTime);
+        LOG_WARNING(mLogger, "[{}] MagewellCapturePin::SetStartTime at {}", mLogPrefix, streamStartTime);
         mStreamStartTime = streamStartTime;
     }
     else
