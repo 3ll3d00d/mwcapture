@@ -1481,10 +1481,12 @@ HRESULT MagewellCapturePin::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATO
     CheckPointer(pProperties, E_POINTER)
     CAutoLock cAutoLock(m_pFilter->pStateLock());
     HRESULT hr = NOERROR;
+    auto acceptedUpstreamBufferCount = true;
     if (pProperties->cBuffers < 1)
     {
         // 1 works for mpc-vr, 16 works for madVR so go with that as a default if the input pin doesn't suggest a number.
         pProperties->cBuffers = 16;
+        acceptedUpstreamBufferCount = false;
     }
     if (mPinType != PIN_AUDIO_CAPTURE)
     {
@@ -1496,7 +1498,7 @@ HRESULT MagewellCapturePin::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATO
         pProperties->cbBuffer = frameSize;
     }
 #ifndef NO_QUILL
-    LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::DecideBufferSize size: {} count: {}", mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers);
+    LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::DecideBufferSize size: {} count: {} (from upstream? {})", mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers, acceptedUpstreamBufferCount);
 #endif
     ALLOCATOR_PROPERTIES actual;
     hr = pIMemAlloc->SetProperties(pProperties, &actual);
