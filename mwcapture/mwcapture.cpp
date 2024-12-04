@@ -385,7 +385,14 @@ HRESULT MagewellCapturePin::VideoFrameGrabber::grab()
 #endif
             break;
         }
-
+        if (pin->mStreamStartTime == 0)
+        {
+#ifndef NO_QUILL
+            LOG_TRACE_L1(pin->mLogger, "[{}] Stream has not started, sleeping", pin->mLogPrefix);
+            BACKOFF;
+            continue;
+#endif
+        }
         auto hr = pin->LoadVideoSignal(&channel);
         if (FAILED(hr))
         {
@@ -1086,15 +1093,18 @@ MagewellCapturePin::MagewellCapturePin(HRESULT* phr, MagewellCaptureFilter* pPar
 
 HRESULT MagewellCapturePin::OnThreadStartPlay()
 {
+    LONGLONG now;
+    MWGetDeviceTime(mFilter->GetChannelHandle(), &now);
+#ifndef NO_QUILL
     if (mStreamStartTime == 0)
     {
-        LONGLONG now;
-        MWGetDeviceTime(mFilter->GetChannelHandle(), &now);
-#ifndef NO_QUILL
-        LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, using for stream start time", mLogPrefix, now);
-#endif
-        mStreamStartTime = now;
+        LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {} but stream not started yet", mLogPrefix, now);
     }
+    else
+    {
+        LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, stream started at ", mLogPrefix, now, mStreamStartTime);
+    }
+#endif
     return S_OK;
 }
 
@@ -1291,6 +1301,15 @@ HRESULT MagewellCapturePin::FillBuffer(IMediaSample* pms)
                 break;
             }
 
+            if (mStreamStartTime == 0)
+            {
+#ifndef NO_QUILL
+                LOG_TRACE_L1(mLogger, "[{}] Stream has not started, sleeping", mLogPrefix);
+                BACKOFF;
+                continue;
+#endif
+
+            }
             mLastMwResult = MWGetAudioSignalStatus(h_channel, &mAudioSignal.signalStatus);
             if (mLastMwResult != MW_SUCCEEDED)
             {
@@ -1657,17 +1676,10 @@ STDMETHODIMP MagewellCapturePin::NonDelegatingQueryInterface(REFIID riid, void**
 
 void MagewellCapturePin::SetStartTime(LONGLONG streamStartTime)
 {
-    if (mStreamStartTime == 0)
-    {
-        mStreamStartTime = streamStartTime;
+    mStreamStartTime = streamStartTime;
 #ifndef NO_QUILL
-        LOG_WARNING(mLogger, "[{}] MagewellCapturePin::SetStartTime at {}", mLogPrefix, streamStartTime);
-    }
-    else
-    {
-        LOG_WARNING(mLogger, "[{}] MagewellCapturePin::SetStartTime at {} but already set to {}", mLogPrefix, streamStartTime, mStreamStartTime);
+    LOG_WARNING(mLogger, "[{}] MagewellCapturePin::SetStartTime at {}", mLogPrefix, streamStartTime);
 #endif
-    }
 }
 
 HRESULT MagewellCapturePin::BeginFlush()
