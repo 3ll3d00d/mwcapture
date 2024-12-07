@@ -1326,7 +1326,7 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
     if (mLastMwResult != MW_SUCCEEDED)
     {
 		#ifndef NO_QUILL
-        LOG_WARNING(mLogger, "MagewellCapturePin::LoadSignal MWGetInputSpecificStatus failed");
+        LOG_WARNING(mLogger, "MagewellVideoCapturePin::LoadSignal MWGetInputSpecificStatus failed");
 		#endif
 
     	return S_FALSE;
@@ -1413,7 +1413,7 @@ HRESULT MagewellVideoCapturePin::OnThreadCreate()
 	#ifndef NO_QUILL
     CustomFrontend::preallocate();
 
-	LOG_INFO(mLogger, "[{}] MagewellCapturePin::OnThreadCreate", mLogPrefix);
+	LOG_INFO(mLogger, "[{}] MagewellVideoCapturePin::OnThreadCreate", mLogPrefix);
 	#endif
 
 	// Wait Events
@@ -1837,7 +1837,7 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
 	#ifndef NO_QUILL
     CustomFrontend::preallocate();
 
-    LOG_INFO(mLogger, "[{}] MagewellCapturePin::OnThreadCreate", mLogPrefix);
+    LOG_INFO(mLogger, "[{}] MagewellAudioCapturePin::OnThreadCreate", mLogPrefix);
 	#endif
 
 	// Wait Events
@@ -1848,7 +1848,7 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
     if (mLastMwResult != MW_SUCCEEDED)
     {
 		#ifndef NO_QUILL
-        LOG_WARNING(mLogger, "[{}] Unable to MWGetAudioSignalStatus", mLogPrefix);
+        LOG_WARNING(mLogger, "[{}] MagewellAudioCapturePin::OnThreadCreate Unable to MWGetAudioSignalStatus", mLogPrefix);
 		#endif
     }
 
@@ -1857,7 +1857,7 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
     if (mLastMwResult != MW_SUCCEEDED)
     {
 		#ifndef NO_QUILL
-        LOG_ERROR(mLogger, "[{}] Unable to MWStartAudioCapture", mLogPrefix);
+        LOG_ERROR(mLogger, "[{}] MagewellAudioCapturePin::OnThreadCreate Unable to MWStartAudioCapture", mLogPrefix);
 		#endif
         // TODO throw
     }
@@ -1867,7 +1867,7 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
     if (!mNotify)
     {
 		#ifndef NO_QUILL
-        LOG_ERROR(mLogger, "[{}] Unable to MWRegistryNotify", mLogPrefix);
+        LOG_ERROR(mLogger, "[{}] MagewellAudioCapturePin::OnThreadCreate Unable to MWRegistryNotify", mLogPrefix);
 		#endif
         // TODO throw
     }
@@ -1945,32 +1945,7 @@ bool MagewellAudioCapturePin::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
     return true;
 }
 
-//////////////////////////////////////////////////////////////////////////
-// MemAllocator 
-//////////////////////////////////////////////////////////////////////////
-MemAllocator::MemAllocator(LPUNKNOWN pUnk, HRESULT* pHr) : CMemAllocator("MemAllocator", pUnk, pHr)
-{
-    // exists purely to allow for easy debugging of what is going on inside CMemAllocator
-}
-
-HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
-{
-    HRESULT hr = S_OK;
-    MemAllocator* pAlloc = new MemAllocator(nullptr, &hr);
-    if (!pAlloc)
-    {
-        return E_OUTOFMEMORY;
-    }
-    
-    if (FAILED(hr))
-    {
-        delete pAlloc;
-        return hr;
-    }
-    
-    return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
-}
-
+// loops til we have a frame to process, dealing with any mediatype changes as we go and then grabs a buffer once it's time to go
 HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFERENCE_TIME* pStartTime,
     REFERENCE_TIME* pEndTime, DWORD dwFlags)
 {
@@ -2072,4 +2047,30 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
         }
     }
     return retVal;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// MemAllocator 
+//////////////////////////////////////////////////////////////////////////
+MemAllocator::MemAllocator(LPUNKNOWN pUnk, HRESULT* pHr) : CMemAllocator("MemAllocator", pUnk, pHr)
+{
+    // exists purely to allow for easy debugging of what is going on inside CMemAllocator
+}
+
+HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
+{
+    HRESULT hr = S_OK;
+    MemAllocator* pAlloc = new MemAllocator(nullptr, &hr);
+    if (!pAlloc)
+    {
+        return E_OUTOFMEMORY;
+    }
+    
+    if (FAILED(hr))
+    {
+        delete pAlloc;
+        return hr;
+    }
+    
+    return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
 }
