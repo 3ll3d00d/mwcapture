@@ -44,12 +44,6 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
 EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
 
-typedef enum {
-    PIN_VIDEO_CAPTURE,
-    PIN_VIDEO_PREVIEW,
-    PIN_AUDIO_CAPTURE
-} mw_pin_type;
-
 struct HDR_META 
 {
     bool exists = false;
@@ -213,11 +207,11 @@ private:
 /**
  * A stream of audio or video flowing from the capture device to an output pin.
  */
-class MagewellCapturePin final :
+class MagewellCapturePin :
 	public CSourceStream, public IAMStreamConfig, public IKsPropertySet, public IAMPushSource, public CBaseStreamControl
 {
 public:
-    MagewellCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, mw_pin_type pinType);
+    MagewellCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix);
 
     DECLARE_IUNKNOWN;
 
@@ -241,17 +235,12 @@ public:
     //////////////////////////////////////////////////////////////////////////
     HRESULT STDMETHODCALLTYPE SetFormat(AM_MEDIA_TYPE* pmt) override;
     HRESULT STDMETHODCALLTYPE GetFormat(AM_MEDIA_TYPE** ppmt) override;
-    HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
-    HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
 
     //////////////////////////////////////////////////////////////////////////
     //  CSourceStream
     //////////////////////////////////////////////////////////////////////////
-    HRESULT FillBuffer(IMediaSample* pms) override;
     HRESULT DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATOR_PROPERTIES* pProperties) override;
-    HRESULT GetMediaType(CMediaType* pmt) override;
     HRESULT SetMediaType(const CMediaType* pmt) override;
-    HRESULT OnThreadCreate(void) override;
     HRESULT OnThreadDestroy(void) override;
     HRESULT OnThreadStartPlay(void) override;
 
@@ -282,50 +271,19 @@ public:
     HRESULT GetMaxStreamOffset(REFERENCE_TIME* prtMaxOffset) override { return E_NOTIMPL; }
     HRESULT SetMaxStreamOffset(REFERENCE_TIME rtMaxOffset) override { return E_NOTIMPL; }
 
-private:
-
-    // Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
-    class VideoFrameGrabber
-    {
-    public:
-        VideoFrameGrabber(MagewellCapturePin* pin, HCHANNEL channel, IMediaSample* pms);
-        ~VideoFrameGrabber();
-
-        VideoFrameGrabber(VideoFrameGrabber const&) = delete;
-        VideoFrameGrabber& operator =(VideoFrameGrabber const&) = delete;
-        VideoFrameGrabber(VideoFrameGrabber&&) = delete;
-        VideoFrameGrabber& operator=(VideoFrameGrabber&&) = delete;
-
-    	HRESULT grab();
-
-    private:
-        HCHANNEL channel;
-	    MagewellCapturePin* pin;
-        IMediaSample* pms;
-        BYTE* pmsData;
-    };
-
-    static void LoadVideoFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal);
-    static void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame);
-    void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
-    bool ShouldChangeVideoMediaType();
-
-    static void LoadAudioFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal);
-    static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
-    bool ShouldChangeAudioMediaType(AUDIO_FORMAT* newAudioFormat);
-
-    HRESULT LoadVideoSignal(HCHANNEL* pChannel);
-
-    HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat, const AUDIO_FORMAT* newAudioFormat);
-
 protected:
+    virtual void StopCapture() = 0;
+    virtual bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) = 0;
+    HRESULT RenegotiateMediaType(const CMediaType* pmt, int oldSize, int newSize);
+    HRESULT HandleStreamStateChange(IMediaSample* pms);
+
 #ifndef NO_QUILL
     std::string mLogPrefix;
     CustomLogger* mLogger;
 #endif
 
     LONGLONG mFrameCounter;
-    mw_pin_type mPinType;
+    bool mPreview;
     MagewellCaptureFilter* mFilter;
     WORD mSinceLastLog;
     LONGLONG mStreamStartTime;
@@ -340,11 +298,98 @@ protected:
     boolean mSendMediaType;
     // per frame
     LONGLONG mFrameEndTime;
+};
 
+
+/**
+ * A video stream flowing from the capture device to an output pin.
+ */
+class MagewellVideoCapturePin final :
+    public MagewellCapturePin
+{
+public:
+    MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
+
+    //////////////////////////////////////////////////////////////////////////
+    //  IAMStreamConfig
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
+    HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
+
+    //////////////////////////////////////////////////////////////////////////
+    //  CSourceStream
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT FillBuffer(IMediaSample* pms) override;
+    HRESULT GetMediaType(CMediaType* pmt) override;
+    HRESULT OnThreadCreate(void) override;
+
+protected:
     VIDEO_SIGNAL mVideoSignal = {};
     VIDEO_FORMAT mVideoFormat = {};
     boolean mHasHdrInfoFrame;
 
+    // Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
+    class VideoFrameGrabber
+    {
+    public:
+        VideoFrameGrabber(MagewellVideoCapturePin* pin, HCHANNEL channel, IMediaSample* pms);
+        ~VideoFrameGrabber();
+
+        VideoFrameGrabber(VideoFrameGrabber const&) = delete;
+        VideoFrameGrabber& operator =(VideoFrameGrabber const&) = delete;
+        VideoFrameGrabber(VideoFrameGrabber&&) = delete;
+        VideoFrameGrabber& operator=(VideoFrameGrabber&&) = delete;
+
+        HRESULT grab();
+
+    private:
+        HCHANNEL channel;
+        MagewellVideoCapturePin* pin;
+        IMediaSample* pms;
+        BYTE* pmsData;
+    };
+
+    static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal);
+    static void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame);
+    void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
+    bool ShouldChangeMediaType();
+    HRESULT LoadSignal(HCHANNEL* pChannel);
+    HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
+    void StopCapture() override;
+    bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
+};
+
+/**
+ * An audio stream flowing from the capture device to an output pin.
+ */
+class MagewellAudioCapturePin final :
+    public MagewellCapturePin
+{
+public:
+    MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent);
+
+    //////////////////////////////////////////////////////////////////////////
+    //  IAMStreamConfig
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
+    HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
+
+    //////////////////////////////////////////////////////////////////////////
+    //  CSourceStream
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT FillBuffer(IMediaSample* pms) override;
+    HRESULT GetMediaType(CMediaType* pmt) override;
+    HRESULT OnThreadCreate(void) override;
+
+protected:
     AUDIO_SIGNAL mAudioSignal = {};
     AUDIO_FORMAT mAudioFormat = {};
+
+    static void LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal);
+    static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
+    bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
+    HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
+    void StopCapture() override;
+    bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
 };
+
