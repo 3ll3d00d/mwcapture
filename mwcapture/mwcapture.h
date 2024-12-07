@@ -369,6 +369,13 @@ public:
     MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent);
 
     //////////////////////////////////////////////////////////////////////////
+    //  CBaseOutputPin
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT DecideAllocator(IMemInputPin* pPin, __deref_out IMemAllocator** pAlloc) override;
+    HRESULT InitAllocator(__deref_out IMemAllocator** ppAlloc) override;
+    HRESULT GetDeliveryBuffer(__deref_out IMediaSample** ppSample, __in_opt REFERENCE_TIME* pStartTime, __in_opt REFERENCE_TIME* pEndTime, DWORD dwFlags) override;
+
+	//////////////////////////////////////////////////////////////////////////
     //  IAMStreamConfig
     //////////////////////////////////////////////////////////////////////////
     HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
@@ -377,9 +384,9 @@ public:
     //////////////////////////////////////////////////////////////////////////
     //  CSourceStream
     //////////////////////////////////////////////////////////////////////////
-    HRESULT FillBuffer(IMediaSample* pms) override;
     HRESULT GetMediaType(CMediaType* pmt) override;
     HRESULT OnThreadCreate(void) override;
+    HRESULT FillBuffer(IMediaSample* pms) override;
 
 protected:
     AUDIO_SIGNAL mAudioSignal = {};
@@ -393,3 +400,8 @@ protected:
     bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
 };
 
+class MemAllocator final : public CMemAllocator
+{
+public:
+    MemAllocator(__inout_opt LPUNKNOWN, __inout HRESULT*);
+};

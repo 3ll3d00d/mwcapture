@@ -403,10 +403,10 @@ HRESULT MagewellCapturePin::HandleStreamStateChange(IMediaSample* pms)
 
 HRESULT MagewellCapturePin::OnThreadStartPlay()
 {
+	#ifndef NO_QUILL
     LONGLONG now;
     MWGetDeviceTime(mFilter->GetChannelHandle(), &now);
 
-	#ifndef NO_QUILL
     if (mStreamStartTime == 0)
     {
         LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {} but stream not started yet", mLogPrefix, now);
@@ -685,31 +685,40 @@ receiveconnection:
                 m_pAllocator->GetProperties(&props);
                 m_pAllocator->Decommit();
                 props.cbBuffer = newSize;
-                m_pAllocator->SetProperties(&props, &actual);
-                hr = m_pAllocator->Commit();
-                m_pAllocator->GetProperties(&checkProps);
+                hr = m_pAllocator->SetProperties(&props, &actual);
                 if (SUCCEEDED(hr))
                 {
-                    if (checkProps.cbBuffer == props.cbBuffer && checkProps.cBuffers == props.cBuffers)
+                    hr = m_pAllocator->Commit();
+                    m_pAllocator->GetProperties(&checkProps);
+                    if (SUCCEEDED(hr))
                     {
-						#ifndef NO_QUILL
-                        LOG_TRACE_L1(mLogger, "[{}] Updated allocator to {} bytes {} buffers", mLogPrefix, props.cbBuffer, props.cBuffers);
-						#endif
-                        retVal = S_OK;
+                        if (checkProps.cbBuffer == props.cbBuffer && checkProps.cBuffers == props.cBuffers)
+                        {
+							#ifndef NO_QUILL
+                            LOG_TRACE_L1(mLogger, "[{}] Updated allocator to {} bytes {} buffers", mLogPrefix, props.cbBuffer, props.cBuffers);
+							#endif
+                            retVal = S_OK;
+                        }
+                        else
+                        {
+							#ifndef NO_QUILL
+                            LOG_WARNING(mLogger, "[{}] Allocator accepted update to {} bytes {} buffers but is {} bytes {} buffers",
+                                mLogPrefix, props.cbBuffer, props.cBuffers, checkProps.cbBuffer, checkProps.cBuffers);
+							#endif
+                        }
                     }
                     else
                     {
 						#ifndef NO_QUILL
-                        LOG_WARNING(mLogger, "[{}] Allocator accepted update to {} bytes {} buffers but is {} bytes {} buffers",
-                            mLogPrefix, props.cbBuffer, props.cBuffers, checkProps.cbBuffer, checkProps.cBuffers);
+                        LOG_WARNING(mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers [{}]", props.cbBuffer, props.cBuffers, hr);
 						#endif
                     }
                 }
                 else
                 {
-					#ifndef NO_QUILL
-                    LOG_WARNING(mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers", props.cbBuffer, props.cBuffers);
-					#endif
+                    #ifndef NO_QUILL
+                    LOG_WARNING(mLogger, "[{}] Allocator did not commit update to {} bytes {} buffers [{}]", props.cbBuffer, props.cBuffers, hr);
+                    #endif
                 }
             }
         }
@@ -1557,6 +1566,58 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 	#endif
 }
 
+HRESULT MagewellAudioCapturePin::DecideAllocator(IMemInputPin* pPin, IMemAllocator** ppAlloc)
+{
+    // copied from CBaseOutputPin but preferring to use our own allocator first
+
+	HRESULT hr = NOERROR;
+    *ppAlloc = nullptr;
+
+    ALLOCATOR_PROPERTIES prop;
+    ZeroMemory(&prop, sizeof(prop));
+
+	pPin->GetAllocatorRequirements(&prop);
+    if (prop.cbAlign == 0) {
+        prop.cbAlign = 1;
+    }
+
+    /* Try the allocator provided by the output pin. */
+    hr = InitAllocator(ppAlloc);
+    if (SUCCEEDED(hr)) {
+        hr = DecideBufferSize(*ppAlloc, &prop);
+        if (SUCCEEDED(hr)) {
+            hr = pPin->NotifyAllocator(*ppAlloc, FALSE);
+            if (SUCCEEDED(hr)) {
+                return NOERROR;
+            }
+        }
+    }
+
+    if (*ppAlloc) {
+        (*ppAlloc)->Release();
+        *ppAlloc = nullptr;
+    }
+
+	/* Try the allocator provided by the input pin */
+    hr = pPin->GetAllocator(ppAlloc);
+    if (SUCCEEDED(hr)) {
+        hr = DecideBufferSize(*ppAlloc, &prop);
+        if (SUCCEEDED(hr)) {
+            hr = pPin->NotifyAllocator(*ppAlloc, FALSE);
+            if (SUCCEEDED(hr)) {
+                return NOERROR;
+            }
+        }
+    }
+
+    if (*ppAlloc) {
+        (*ppAlloc)->Release();
+        *ppAlloc = nullptr;
+    }
+
+    return hr;
+}
+
 void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal)
 {
     auto audioIn = *audioSignal;
@@ -1673,178 +1734,85 @@ bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat
 HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 {
     auto h_channel = mFilter->GetChannelHandle();
-    auto retVal = S_OK;
 
+	mLastMwResult = MWCaptureAudioFrame(h_channel, &mAudioSignal.frameInfo);
+    if (MW_SUCCEEDED != mLastMwResult)
+    {
+		#ifndef NO_QUILL
+        LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed, sleeping", mLogPrefix);
+		#endif
+
+        BACKOFF;
+        return S_FALSE;
+    }
+
+	auto retVal = S_OK;
     BYTE* pmsData;
     pms->GetPointer(&pmsData);
-    auto hasFrame = false;
-    // keep going til we have a frame
-    while (!hasFrame)
+
+    auto pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
+    auto sampleSize = pms->GetSize();
+    long bytesCaptured = 0;
+    int samplesCaptured = 0;
+    for (int j = 0; j < mAudioFormat.channelCount / 2; ++j)
     {
-        if (CheckStreamState(nullptr) == STREAM_DISCARDING)
+        // channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
+        // each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
+        for (int i = 0; i < MWCAP_AUDIO_SAMPLES_PER_FRAME; i++)
         {
-			#ifndef NO_QUILL
-            LOG_TRACE_L1(mLogger, "[{}] Stream is discarding", mLogPrefix);
-			#endif
-
-        	break;
-        }
-
-        if (mStreamStartTime == 0)
-        {
-			#ifndef NO_QUILL
-            LOG_TRACE_L1(mLogger, "[{}] Stream has not started, sleeping", mLogPrefix);
-			#endif
-
-        	BACKOFF;
-            continue;
-
-        }
-        mLastMwResult = MWGetAudioSignalStatus(h_channel, &mAudioSignal.signalStatus);
-        if (mLastMwResult != MW_SUCCEEDED)
-        {
-			#ifndef NO_QUILL
-            LOG_WARNING(mLogger, "[{}] MWGetAudioSignalStatus failed, sleeping", mLogPrefix);
-			#endif
-
-        	BACKOFF;
-            continue;
-        }
-
-        AUDIO_FORMAT newAudioFormat;
-        LoadFormat(&newAudioFormat, &mAudioSignal);
-
-        if (newAudioFormat.channelCount == 0)
-        {
-			#ifndef NO_QUILL
-            LOG_TRACE_L3(mLogger, "[{}] No signal, sleeping", mLogPrefix);
-			#endif
-
-        	BACKOFF;
-            continue;
-        }
-
-        // detect format changes
-        if (ShouldChangeMediaType(&newAudioFormat))
-        {
-			#ifndef NO_QUILL
-            LOG_WARNING(mLogger, "[{}] AudioFormat changed! Attempting to reconnect", mLogPrefix);
-			#endif
-
-        	CMediaType proposedMediaType(m_mt);
-            AudioFormatToMediaType(&proposedMediaType, &newAudioFormat);
-            auto hr = DoChangeMediaType(&proposedMediaType, &newAudioFormat);
-            if (FAILED(hr))
+            int outByteStartIdx = (i * mAudioFormat.channelCount + j * 2) * mAudioFormat.bitDepthInBytes;
+            int inLeftByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j) * MAX_BIT_DEPTH_IN_BYTE) + MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
+            int inRightByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2) * MAX_BIT_DEPTH_IN_BYTE) + MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
+            for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
             {
-				#ifndef NO_QUILL
-                LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix, hr);
-				#endif
-
-            	// TODO show OSD to say we need to change
-                BACKOFF;
-                continue;
-            }
-        }
-
-        mLastMwResult = MWGetNotifyStatus(h_channel, mNotify, &mStatusBits);
-        if (mStatusBits & MWCAP_NOTIFY_AUDIO_SIGNAL_CHANGE)
-        {
-			#ifndef NO_QUILL
-            LOG_TRACE_L1(mLogger, "[{}] Audio signal change, sleeping", mLogPrefix);
-			#endif
-
-        	BACKOFF;
-            continue;
-        }
-
-        if (mStatusBits & MWCAP_NOTIFY_AUDIO_INPUT_SOURCE_CHANGE)
-        {
-			#ifndef NO_QUILL
-            LOG_TRACE_L1(mLogger, "[{}] Audio input source change, sleeping", mLogPrefix);
-			#endif
-
-        	BACKOFF;
-            continue;
-        }
-
-        if (mStatusBits & MWCAP_NOTIFY_AUDIO_FRAME_BUFFERED) {
-            mLastMwResult = MWCaptureAudioFrame(h_channel, &mAudioSignal.frameInfo);
-            if (MW_SUCCEEDED != mLastMwResult)
-            {
-				#ifndef NO_QUILL
-                LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed, sleeping", mLogPrefix);
-				#endif
-
-            	BACKOFF;
-                continue;
-            }
-
-            auto pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
-            auto sampleSize = pms->GetSize();
-            long bytesCaptured = 0;
-            int samplesCaptured = 0;
-            for (int j = 0; j < mAudioFormat.channelCount / 2; ++j)
-            {
-                // channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
-                // each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
-                for (int i = 0; i < MWCAP_AUDIO_SAMPLES_PER_FRAME; i++)
+                auto leftOutIdx = outByteStartIdx + k;
+                auto rightOutIdx = leftOutIdx + mAudioFormat.bitDepthInBytes;
+                auto inLeftIdx = inLeftByteStartIdx + k;
+                auto inRightIdx = inRightByteStartIdx + k;
+                bytesCaptured += 2;
+                if (leftOutIdx < sampleSize && rightOutIdx < sampleSize)
                 {
-                    int outByteStartIdx = (i * mAudioFormat.channelCount + j * 2) * mAudioFormat.bitDepthInBytes;
-                    int inLeftByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j) * MAX_BIT_DEPTH_IN_BYTE) + MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
-                    int inRightByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2) * MAX_BIT_DEPTH_IN_BYTE) + MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
-                    for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
-                    {
-                        auto leftOutIdx = outByteStartIdx + k;
-                        auto rightOutIdx = leftOutIdx + mAudioFormat.bitDepthInBytes;
-                        auto inLeftIdx = inLeftByteStartIdx + k;
-                        auto inRightIdx = inRightByteStartIdx + k;
-                        bytesCaptured += 2;
-                        if (leftOutIdx < sampleSize && rightOutIdx < sampleSize)
-                        {
-                            pmsData[leftOutIdx] = pbAudioFrame[inLeftIdx];
-                            pmsData[rightOutIdx] = pbAudioFrame[inRightIdx];
+                    pmsData[leftOutIdx] = pbAudioFrame[inLeftIdx];
+                    pmsData[rightOutIdx] = pbAudioFrame[inRightIdx];
 
-                        }
-                    }
-                    samplesCaptured++;
                 }
             }
-            mFrameCounter++;
-            if (mSinceLastLog++ >= 1000)
-            {
-                mSinceLastLog = 0;
-            }
-            MWGetDeviceTime(h_channel, &mFrameEndTime);
-            auto endTime = mFrameEndTime - mStreamStartTime;
-            auto startTime = endTime - static_cast<long>(mAudioFormat.sampleInterval * MWCAP_AUDIO_SAMPLES_PER_FRAME);
-
-        	#ifndef NO_QUILL
-            if (bytesCaptured != sampleSize)
-            {
-                LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
-            }
-            else if (mSinceLastLog == 0)
-            {
-                LOG_TRACE_L1(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
-            }
-            else
-            {
-                LOG_TRACE_L3(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
-            }
-			#endif
-
-        	pms->SetTime(&startTime, &endTime);
-            pms->SetSyncPoint(TRUE);
-            if (mSendMediaType)
-            {
-                CMediaType cmt(m_mt);
-                AM_MEDIA_TYPE* sendMediaType = CreateMediaType(&cmt);
-                pms->SetMediaType(sendMediaType);
-                DeleteMediaType(sendMediaType);
-                mSendMediaType = FALSE;
-            }
-            hasFrame = true;
+            samplesCaptured++;
         }
+    }
+    mFrameCounter++;
+    if (mSinceLastLog++ >= 1000)
+    {
+        mSinceLastLog = 0;
+    }
+    MWGetDeviceTime(h_channel, &mFrameEndTime);
+    auto endTime = mFrameEndTime - mStreamStartTime;
+    auto startTime = endTime - static_cast<long>(mAudioFormat.sampleInterval * MWCAP_AUDIO_SAMPLES_PER_FRAME);
+
+    #ifndef NO_QUILL
+    if (bytesCaptured != sampleSize)
+    {
+        LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+    }
+    else if (mSinceLastLog == 0)
+    {
+        LOG_TRACE_L1(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+    }
+    else
+    {
+        LOG_TRACE_L3(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix, mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+    }
+	#endif
+
+    pms->SetTime(&startTime, &endTime);
+    pms->SetSyncPoint(TRUE);
+    if (mSendMediaType)
+    {
+        CMediaType cmt(m_mt);
+        AM_MEDIA_TYPE* sendMediaType = CreateMediaType(&cmt);
+        pms->SetMediaType(sendMediaType);
+        DeleteMediaType(sendMediaType);
+        mSendMediaType = FALSE;
     }
     if (S_FALSE == HandleStreamStateChange(pms))
     {
@@ -1971,8 +1939,137 @@ bool MagewellAudioCapturePin::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
     pProperties->cbBuffer = MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.bitDepthInBytes * mAudioFormat.channelCount;
     if (pProperties->cBuffers < 1)
     {
-        pProperties->cBuffers = 4;
+        pProperties->cBuffers = 1;
         return false;
     }
     return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// MemAllocator 
+//////////////////////////////////////////////////////////////////////////
+MemAllocator::MemAllocator(LPUNKNOWN pUnk, HRESULT* pHr) : CMemAllocator("MemAllocator", pUnk, pHr)
+{
+    // exists purely to allow for easy debugging of what is going on inside CMemAllocator
+}
+
+HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
+{
+    HRESULT hr = S_OK;
+    MemAllocator* pAlloc = new MemAllocator(nullptr, &hr);
+    if (!pAlloc)
+    {
+        return E_OUTOFMEMORY;
+    }
+    
+    if (FAILED(hr))
+    {
+        delete pAlloc;
+        return hr;
+    }
+    
+    return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
+}
+
+HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFERENCE_TIME* pStartTime,
+    REFERENCE_TIME* pEndTime, DWORD dwFlags)
+{
+    auto h_channel = mFilter->GetChannelHandle();
+    auto hasFrame = false;
+    auto retVal = S_FALSE;
+    // keep going til we have a frame to process
+    while (!hasFrame)
+    {
+        if (CheckStreamState(nullptr) == STREAM_DISCARDING)
+        {
+            #ifndef NO_QUILL
+            LOG_TRACE_L1(mLogger, "[{}] Stream is discarding", mLogPrefix);
+            #endif
+
+            break;
+        }
+
+        if (mStreamStartTime == 0)
+        {
+            #ifndef NO_QUILL
+            LOG_TRACE_L1(mLogger, "[{}] Stream has not started, sleeping", mLogPrefix);
+            #endif
+
+            BACKOFF;
+            continue;
+        }
+
+        mLastMwResult = MWGetAudioSignalStatus(h_channel, &mAudioSignal.signalStatus);
+        if (mLastMwResult != MW_SUCCEEDED)
+        {
+            #ifndef NO_QUILL
+            LOG_WARNING(mLogger, "[{}] MWGetAudioSignalStatus failed, sleeping", mLogPrefix);
+            #endif
+
+            BACKOFF;
+            continue;
+        }
+
+        AUDIO_FORMAT newAudioFormat;
+        LoadFormat(&newAudioFormat, &mAudioSignal);
+
+        if (newAudioFormat.channelCount == 0)
+        {
+            #ifndef NO_QUILL
+            LOG_TRACE_L3(mLogger, "[{}] No signal, sleeping", mLogPrefix);
+            #endif
+
+            BACKOFF;
+            continue;
+        }
+
+        // detect format changes
+        if (ShouldChangeMediaType(&newAudioFormat))
+        {
+            #ifndef NO_QUILL
+            LOG_WARNING(mLogger, "[{}] AudioFormat changed! Attempting to reconnect", mLogPrefix);
+            #endif
+
+            CMediaType proposedMediaType(m_mt);
+            AudioFormatToMediaType(&proposedMediaType, &newAudioFormat);
+            auto hr = DoChangeMediaType(&proposedMediaType, &newAudioFormat);
+            if (FAILED(hr))
+            {
+                #ifndef NO_QUILL
+                LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix, hr);
+                #endif
+
+                // TODO communicate that we need to change somehow
+                BACKOFF;
+            }
+            continue;
+        }
+
+        mLastMwResult = MWGetNotifyStatus(h_channel, mNotify, &mStatusBits);
+        if (mStatusBits & MWCAP_NOTIFY_AUDIO_SIGNAL_CHANGE)
+        {
+            #ifndef NO_QUILL
+            LOG_TRACE_L1(mLogger, "[{}] Audio signal change, sleeping", mLogPrefix);
+            #endif
+
+            BACKOFF;
+            continue;
+        }
+
+        if (mStatusBits & MWCAP_NOTIFY_AUDIO_INPUT_SOURCE_CHANGE)
+        {
+            #ifndef NO_QUILL
+            LOG_TRACE_L1(mLogger, "[{}] Audio input source change, sleeping", mLogPrefix);
+            #endif
+
+            BACKOFF;
+            continue;
+        }
+        if (mStatusBits & MWCAP_NOTIFY_AUDIO_FRAME_BUFFERED)
+        {
+            retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
+            hasFrame = true;
+        }
+    }
+    return retVal;
 }
