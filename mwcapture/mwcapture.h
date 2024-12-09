@@ -15,7 +15,7 @@
 #pragma once
 
 #define NOMINMAX
-
+#define NOT_PRESENT 1024
 
 #ifndef NO_QUILL
 #include <quill/Logger.h>
@@ -100,6 +100,7 @@ struct AUDIO_SIGNAL
 {
     MWCAP_AUDIO_SIGNAL_STATUS signalStatus;
     MWCAP_AUDIO_CAPTURE_FRAME frameInfo;
+    HDMI_AUDIO_INFOFRAME_PAYLOAD audioInfo;
 };
 
 struct AUDIO_FORMAT
@@ -109,8 +110,14 @@ struct AUDIO_FORMAT
     double sampleInterval = 10000000.0 / 48000;
     BYTE bitDepth = 16;
     BYTE bitDepthInBytes = 2;
-    WORD channelCount = 2;
+    BYTE channelAllocation = 0x00;
+    WORD channelValidityMask = 0;
+    WORD inputChannelCount = 2;
+    WORD outputChannelCount = 2;
+    std::array<int, 8> channelOffsets { NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT };
     WORD channelMask = KSAUDIO_SPEAKER_STEREO;
+    int lfeChannelIndex = NOT_PRESENT;
+    double lfeLevelAdjustment = 1.0;
 };
 
 class MWReferenceClock final :
@@ -394,6 +401,7 @@ protected:
 
     static void LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal);
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
+    HRESULT LoadSignal(HCHANNEL* pChannel);
     bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
     void StopCapture() override;
