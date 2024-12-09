@@ -2688,35 +2688,44 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 
 	auto pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
 	auto sampleSize = pms->GetSize();
-	long bytesCaptured = 0;
-	int samplesCaptured = 0;
-	for (int j = 0; j < mAudioFormat.inputChannelCount / 2; ++j)
+	auto bytesCaptured = 0L;
+	auto samplesCaptured = 0;
+
+	// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
+	// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
+	// must also apply the channel offsets to ensure each input channel is offset as necessary to be written to the correct output channel index
+	auto outputChannelIdx = -1;
+	for (auto inputChannelIdx = 0; inputChannelIdx < mAudioFormat.inputChannelCount; ++inputChannelIdx)
 	{
-		// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
-		// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
-		// must also apply the channel offsets to ensure the input channel layout is translated correctly to the output channel layout
-		for (int i = 0; i < MWCAP_AUDIO_SAMPLES_PER_FRAME; i++)
+		auto outputOffset = mAudioFormat.channelOffsets[inputChannelIdx];
+		if (outputOffset == NOT_PRESENT) continue;
+
+		outputChannelIdx++;
+		auto isRightChannel = inputChannelIdx % 2 == 1;
+
+		for (auto sampleIdx = 0; sampleIdx < MWCAP_AUDIO_SAMPLES_PER_FRAME; sampleIdx++)
 		{
-			int outByteStartIdx = (i * mAudioFormat.outputChannelCount + j * 2) * mAudioFormat.bitDepthInBytes;
-			int inLeftByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j) * MAX_BIT_DEPTH_IN_BYTE) +
-				MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
-			int inRightByteStartIdx = ((i * MWCAP_AUDIO_MAX_NUM_CHANNELS + j + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2) *
-				MAX_BIT_DEPTH_IN_BYTE) + MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
+			auto inByteStartIdx = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;		// scroll to the sample block
+			inByteStartIdx += inputChannelIdx;										// scroll to the left channel slot
+			if (isRightChannel) inByteStartIdx += MWCAP_AUDIO_MAX_NUM_CHANNELS / 2; // jump 4 slots to the corresponding right channel
+			inByteStartIdx *= MAX_BIT_DEPTH_IN_BYTE;								// convert from slot index to byte index
+			inByteStartIdx += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
+
+			auto outByteStartIdx = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
+			outByteStartIdx += (outputChannelIdx + outputOffset);					// jump to the output channel slot
+			outByteStartIdx *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
 
 			for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
 			{
-				auto leftOutIdx = outByteStartIdx + k;
-				auto rightOutIdx = leftOutIdx + mAudioFormat.bitDepthInBytes;
-				auto inLeftIdx = inLeftByteStartIdx + k;
-				auto inRightIdx = inRightByteStartIdx + k;
-				bytesCaptured += 2;
-				if (leftOutIdx < sampleSize && rightOutIdx < sampleSize)
+				auto inIdx = inByteStartIdx + k;
+				auto outIdx = outByteStartIdx + k + (isRightChannel ? mAudioFormat.bitDepthInBytes : 0);
+				bytesCaptured++;
+				if (outIdx < sampleSize)
 				{
-					pmsData[leftOutIdx] = pbAudioFrame[inLeftIdx];
-					pmsData[rightOutIdx] = pbAudioFrame[inRightIdx];
+					pmsData[outIdx] = pbAudioFrame[inIdx];
 				}
 			}
-			samplesCaptured++;
+			if (outputChannelIdx == 0) samplesCaptured++;
 		}
 	}
 	mFrameCounter++;
