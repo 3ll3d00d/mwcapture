@@ -39,7 +39,7 @@
 #define MAX_BIT_DEPTH_IN_BYTE (sizeof(DWORD))
 #define BACKOFF Sleep(20)
 
-constexpr auto minus_10db = pow(10.0, -10.0 / 20.0);
+constexpr auto unity = 1.0;
 constexpr auto chromaticity_scale_factor = 0.00002;
 constexpr auto high_luminance_scale_factor = 1.0;
 constexpr auto low_luminance_scale_factor = 0.0001;
@@ -1685,7 +1685,7 @@ HRESULT MagewellAudioCapturePin::DecideAllocator(IMemInputPin* pPin, IMemAllocat
 	return hr;
 }
 
-void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal)
+void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const
 {
 	auto audioIn = *audioSignal;
 	auto currentChannelAlloc = audioFormat->channelAllocation;
@@ -1730,8 +1730,8 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 						audioFormat->channelOffsets.fill(0);
 						audioFormat->channelOffsets[2] = 1;
 						audioFormat->channelOffsets[3] = -1;
-						audioFormat->channelOffsets[6] = NOT_PRESENT;
-						audioFormat->channelOffsets[7] = NOT_PRESENT;
+						audioFormat->channelOffsets[6] = not_present;
+						audioFormat->channelOffsets[7] = not_present;
 						audioFormat->lfeChannelIndex = 2;
 					}
 				}
@@ -1740,7 +1740,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 					audioFormat->inputChannelCount = 4;
 					audioFormat->outputChannelCount = 4;
 					audioFormat->channelMask = KSAUDIO_SPEAKER_3POINT1;
-					audioFormat->channelOffsets.fill(NOT_PRESENT);
+					audioFormat->channelOffsets.fill(not_present);
 					audioFormat->channelOffsets[0] = 0;
 					audioFormat->channelOffsets[1] = 0;
 					audioFormat->channelOffsets[2] = 1;
@@ -1753,14 +1753,14 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->inputChannelCount = 2;
 				audioFormat->outputChannelCount = 2;
 				audioFormat->channelMask = KSAUDIO_SPEAKER_STEREO;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 			}
 
 			// CEA-861-E Table 28
-			switch (audioFormat->channelValidityMask)
+			switch (audioFormat->channelAllocation)
 			{
 			case 0x00:
 				// FL FR
@@ -1770,7 +1770,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelMask = KSAUDIO_SPEAKER_2POINT1;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 3;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
@@ -1781,18 +1781,18 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelMask = KSAUDIO_SPEAKER_3POINT0;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 3;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[3] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x03:
 				// FL FR LFE FC
 				audioFormat->channelMask = KSAUDIO_SPEAKER_3POINT1;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 4;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 1; // LFE -> FC
@@ -1804,11 +1804,11 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
 				audioFormat->outputChannelCount = 3;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[4] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x05:
 				// FL FR LFE -- RC --
@@ -1816,7 +1816,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 					SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
 				audioFormat->outputChannelCount = 4;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
@@ -1829,12 +1829,12 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 					SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
 				audioFormat->outputChannelCount = 4;
-				audioFormat->channelOffsets.fill(NOT_PRESENT);
+				audioFormat->channelOffsets.fill(not_present);
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x07:
 				// FL FR LFE FC RC --
@@ -1847,9 +1847,9 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[2] = 1;
 				audioFormat->channelOffsets[3] = -1;
 				audioFormat->channelOffsets[4] = 0;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[5] = not_present;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x08:
@@ -1860,12 +1860,12 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 4;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
 				break;
 			case 0x09:
 				// FL FR LFE -- RL RR
@@ -1876,12 +1876,12 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x0A:
 				// FL FR -- FC RL RR
@@ -1891,13 +1891,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 5;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x0B:
 				// FL FR LFE FC RL RR
@@ -1910,8 +1910,8 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[3] = -1;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x0C:
@@ -1922,13 +1922,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 5;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x0D:
 				// FL FR LFE -- RL RR RC --
@@ -1939,11 +1939,11 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x0E:
@@ -1954,13 +1954,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x0F:
 				// FL FR LFE FC RL RR RC --
@@ -1975,7 +1975,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x10:
@@ -1986,13 +1986,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 2;
 				audioFormat->channelOffsets[5] = 2;
 				audioFormat->channelOffsets[6] = -2;
 				audioFormat->channelOffsets[7] = -2;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x11:
 				// FL FR LFE -- RL RR RLC RRC
@@ -2003,7 +2003,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 2;
 				audioFormat->channelOffsets[5] = 2;
 				audioFormat->channelOffsets[6] = -2;
@@ -2018,13 +2018,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 7;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 2;
 				audioFormat->channelOffsets[5] = 2;
 				audioFormat->channelOffsets[6] = -2;
 				audioFormat->channelOffsets[7] = -2;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x13:
 				// FL FR LFE FC RL RR RLC RRC (RL = side, RLC = back)
@@ -2049,13 +2049,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 4;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
-				audioFormat->channelOffsets[4] = NOT_PRESENT;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
+				audioFormat->channelOffsets[4] = not_present;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x15:
 				// FL FR LFE -- -- -- FLC FRC
@@ -2066,9 +2066,9 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
-				audioFormat->channelOffsets[4] = NOT_PRESENT;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
+				audioFormat->channelOffsets[4] = not_present;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
 				audioFormat->lfeChannelIndex = 2;
@@ -2083,13 +2083,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 5;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
-				audioFormat->channelOffsets[4] = NOT_PRESENT;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[4] = not_present;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x17:
 				// FL FR LFE FC -- -- FLC FRC
@@ -2101,8 +2101,8 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 1;
 				audioFormat->channelOffsets[3] = -1;
-				audioFormat->channelOffsets[4] = NOT_PRESENT;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[4] = not_present;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
 				audioFormat->lfeChannelIndex = 2;
@@ -2115,13 +2115,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 5;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 2;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = -1;
 				audioFormat->channelOffsets[7] = -1;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x19:
 				// FL FR LFE -- RC -- FLC FRC
@@ -2132,9 +2132,9 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 2;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = -1;
 				audioFormat->channelOffsets[7] = -1;
 				audioFormat->lfeChannelIndex = 2;
@@ -2147,13 +2147,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 2;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = -1;
 				audioFormat->channelOffsets[7] = -1;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x1B:
 				// FL FR LFE FC RC -- FLC FRC
@@ -2167,7 +2167,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[2] = 1;
 				audioFormat->channelOffsets[3] = -1;
 				audioFormat->channelOffsets[4] = 2;
-				audioFormat->channelOffsets[5] = NOT_PRESENT;
+				audioFormat->channelOffsets[5] = not_present;
 				audioFormat->channelOffsets[6] = -1;
 				audioFormat->channelOffsets[7] = -1;
 				audioFormat->lfeChannelIndex = 2;
@@ -2180,13 +2180,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x1D:
 				// FL FR LFE -- RL RR FLC FRC
@@ -2198,7 +2198,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
@@ -2214,13 +2214,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 7;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x1F:
 				// FL FR LFE FC RL RR FLC FRC
@@ -2247,13 +2247,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x21:
 				// FL FR LFE FC RL RR FCH --
@@ -2268,7 +2268,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x22:
@@ -2279,13 +2279,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x23:
 				// FL FR LFE FC RL RR -- TC
@@ -2299,7 +2299,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[3] = -1;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
 				audioFormat->channelOffsets[7] = 0;
 				audioFormat->lfeChannelIndex = 2;
 				break;
@@ -2311,13 +2311,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x25:
 				// FL FR LFE -- RL RR FLH FRH
@@ -2328,7 +2328,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
@@ -2343,13 +2343,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 4;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x27:
 				// FL FR LFE -- RL RR FLW FRW (WIDE not supported by Windows, discarded)
@@ -2360,11 +2360,11 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			case 0x28:
@@ -2375,13 +2375,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 7;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x29:
 				// FL FR LFE FC RL RR RC TC
@@ -2408,13 +2408,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 7;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x2B:
 				// FL FR LFE FC RL RR RC FCH
@@ -2442,12 +2442,12 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->channelOffsets[2] = 0;
-				audioFormat->channelOffsets[3] = NOT_PRESENT;
+				audioFormat->channelOffsets[3] = not_present;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 1;
 				audioFormat->channelOffsets[7] = -1;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x2D:
 				// FL FR LFE FC RL RR FCH TC
@@ -2474,13 +2474,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 7;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
 				audioFormat->channelOffsets[6] = 0;
 				audioFormat->channelOffsets[7] = 0;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x2F:
 				// FL FR LFE FC RL RR FLH FRH
@@ -2507,13 +2507,13 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->outputChannelCount = 5;
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
-				audioFormat->channelOffsets[2] = NOT_PRESENT;
+				audioFormat->channelOffsets[2] = not_present;
 				audioFormat->channelOffsets[3] = 0;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
-				audioFormat->lfeChannelIndex = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
+				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x31:
 				// FL FR LFE FC RL RR FLW FRW (WIDE not supported by Windows, discarded)
@@ -2527,8 +2527,8 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 				audioFormat->channelOffsets[3] = -1;
 				audioFormat->channelOffsets[4] = 0;
 				audioFormat->channelOffsets[5] = 0;
-				audioFormat->channelOffsets[6] = NOT_PRESENT;
-				audioFormat->channelOffsets[7] = NOT_PRESENT;
+				audioFormat->channelOffsets[6] = not_present;
+				audioFormat->channelOffsets[7] = not_present;
 				audioFormat->lfeChannelIndex = 2;
 				break;
 			default:
@@ -2537,17 +2537,14 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL
 			}
 
 			// CEA-861-E Table 31
-			if (audioIn.audioInfo.byLFEPlaybackLevel == 0x2)
-			{
-				audioFormat->lfeLevelAdjustment = minus_10db;
-			}
+			audioFormat->lfeLevelAdjustment = audioIn.audioInfo.byLFEPlaybackLevel == 0x2 ? minus_10db : unity;
 		}
 		else
 		{
 			audioFormat->inputChannelCount = 0;
 			audioFormat->outputChannelCount = 0;
-			audioFormat->channelOffsets.fill(NOT_PRESENT);
-			audioFormat->lfeChannelIndex = NOT_PRESENT;
+			audioFormat->channelOffsets.fill(not_present);
+			audioFormat->lfeChannelIndex = not_present;
 		}
 	}
 }
@@ -2694,38 +2691,94 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 	// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
 	// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
 	// must also apply the channel offsets to ensure each input channel is offset as necessary to be written to the correct output channel index
-	auto outputChannelIdx = -1;
-	for (auto inputChannelIdx = 0; inputChannelIdx < mAudioFormat.inputChannelCount; ++inputChannelIdx)
-	{
-		auto outputOffset = mAudioFormat.channelOffsets[inputChannelIdx];
-		if (outputOffset == NOT_PRESENT) continue;
+	auto outputChannelIdxL = -1;
+	auto outputChannelIdxR = -1;
+	auto outputChannels = -1;
+	auto mustRescaleLfe = mAudioFormat.lfeLevelAdjustment != unity; // NOLINT(clang-diagnostic-float-equal)
 
-		outputChannelIdx++;
-		auto isRightChannel = inputChannelIdx % 2 == 1;
+	for (auto pairIdx = 0; pairIdx < mAudioFormat.inputChannelCount / 2; ++pairIdx)
+	{
+		auto channelIdxL = pairIdx * 2;
+		auto outputOffsetL = mAudioFormat.channelOffsets[channelIdxL];
+		if (outputOffsetL != not_present) outputChannelIdxL = ++outputChannels;
+
+		auto channelIdxR = channelIdxL + 1;
+		auto outputOffsetR = mAudioFormat.channelOffsets[channelIdxR];
+		if (outputOffsetR != not_present) outputChannelIdxR = ++outputChannels;
+
+		if (outputOffsetL == not_present && outputOffsetR == not_present) continue;
 
 		for (auto sampleIdx = 0; sampleIdx < MWCAP_AUDIO_SAMPLES_PER_FRAME; sampleIdx++)
 		{
-			auto inByteStartIdx = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;		// scroll to the sample block
-			inByteStartIdx += inputChannelIdx;										// scroll to the left channel slot
-			if (isRightChannel) inByteStartIdx += MWCAP_AUDIO_MAX_NUM_CHANNELS / 2; // jump 4 slots to the corresponding right channel
-			inByteStartIdx *= MAX_BIT_DEPTH_IN_BYTE;								// convert from slot index to byte index
-			inByteStartIdx += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
+			auto inByteStartIdxL = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
+			inByteStartIdxL += pairIdx;										         // scroll to the left channel slot
+			inByteStartIdxL *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
+			inByteStartIdxL += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
 
-			auto outByteStartIdx = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
-			outByteStartIdx += (outputChannelIdx + outputOffset);					// jump to the output channel slot
-			outByteStartIdx *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
+			auto inByteStartIdxR = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
+			inByteStartIdxR += pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2;	         // scroll to the right channel slot
+			inByteStartIdxR *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
+			inByteStartIdxR += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
+
+			auto outByteStartIdxL = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
+			outByteStartIdxL += (outputChannelIdxL + outputOffsetL);                 // jump to the output channel slot
+			outByteStartIdxL *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
+
+			auto outByteStartIdxR = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
+			outByteStartIdxR += (outputChannelIdxR + outputOffsetR);                 // jump to the output channel slot
+			outByteStartIdxR *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
 
 			for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
 			{
-				auto inIdx = inByteStartIdx + k;
-				auto outIdx = outByteStartIdx + k + (isRightChannel ? mAudioFormat.bitDepthInBytes : 0);
-				bytesCaptured++;
-				if (outIdx < sampleSize)
+				if (outputOffsetL != not_present)
 				{
-					pmsData[outIdx] = pbAudioFrame[inIdx];
+					auto inIdx = inByteStartIdxL + k;
+					auto outIdx = outByteStartIdxL + k;
+					bytesCaptured++;
+					if (outIdx < sampleSize)
+					{
+						auto sampleByte = pbAudioFrame[inIdx];
+						if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
+						{
+							// it's PCM so cast the value to an int, adjust gain, shift to add some bits and dither
+							// sampleByte *= mAudioFormat.lfeLevelAdjustment;
+						}
+						pmsData[outIdx] = sampleByte;
+					}
+					#ifndef NO_QUILL
+					if (sampleIdx == 0)
+					{
+						LOG_TRACE_L3(mLogger, "[{}] sample {}/{} of {} cpy {}->{} {}->{}", mLogPrefix, sampleIdx, k,
+							mAudioFormat.bitDepthInBytes, channelIdxL, outputChannelIdxL + outputOffsetL, inIdx, outIdx);
+					}
+					#endif
+				}
+
+				if (outputOffsetR != not_present)
+				{
+					auto inIdx = inByteStartIdxR + k;
+					auto outIdx = outByteStartIdxR + k;
+					bytesCaptured++;
+					if (outIdx < sampleSize)
+					{
+						auto sampleByte = pbAudioFrame[inIdx];
+						if (mAudioFormat.lfeChannelIndex == channelIdxR && mustRescaleLfe)
+						{
+							// it's PCM so cast the value to an int, adjust gain, shift to add some bits and dither
+							// sampleByte *= mAudioFormat.lfeLevelAdjustment;
+						}
+						pmsData[outIdx] = sampleByte;
+					}
+					#ifndef NO_QUILL
+					if (sampleIdx == 0)
+					{
+						LOG_TRACE_L3(mLogger, "[{}] sample {}/{} of {} cpy {}->{} {}->{}", mLogPrefix, sampleIdx, k,
+							mAudioFormat.bitDepthInBytes, channelIdxR, outputChannelIdxR + outputOffsetR, inIdx, outIdx);
+					}
+					#endif
 				}
 			}
-			if (outputChannelIdx == 0) samplesCaptured++;
+			if (pairIdx == 0) samplesCaptured++;
 		}
 	}
 	mFrameCounter++;

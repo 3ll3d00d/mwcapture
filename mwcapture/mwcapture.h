@@ -15,7 +15,8 @@
 #pragma once
 
 #define NOMINMAX
-#define NOT_PRESENT 1024
+
+constexpr auto not_present = 1024;
 
 #ifndef NO_QUILL
 #include <quill/Logger.h>
@@ -38,6 +39,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include <windows.h>
 #include <source.h>
 #include <dvdmedia.h>
+#include <array>
 
 #include "LibMWCapture/MWCapture.h"
 
@@ -114,9 +116,9 @@ struct AUDIO_FORMAT
     WORD channelValidityMask = 0;
     WORD inputChannelCount = 2;
     WORD outputChannelCount = 2;
-    std::array<int, 8> channelOffsets { NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT, NOT_PRESENT };
+    std::array<int, 8> channelOffsets { not_present, not_present, not_present, not_present, not_present, not_present, not_present, not_present };
     WORD channelMask = KSAUDIO_SPEAKER_STEREO;
-    int lfeChannelIndex = NOT_PRESENT;
+    int lfeChannelIndex = not_present;
     double lfeLevelAdjustment = 1.0;
 };
 
@@ -396,11 +398,12 @@ public:
     HRESULT FillBuffer(IMediaSample* pms) override;
 
 protected:
+    double minus_10db = pow(10.0, -10.0 / 20.0);
     AUDIO_SIGNAL mAudioSignal = {};
     AUDIO_FORMAT mAudioFormat = {};
 
-    static void LoadFormat(AUDIO_FORMAT* audioFormat, AUDIO_SIGNAL* audioSignal);
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
+    void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
     HRESULT LoadSignal(HCHANNEL* pChannel);
     bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
