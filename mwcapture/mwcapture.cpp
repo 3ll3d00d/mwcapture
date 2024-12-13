@@ -38,6 +38,7 @@
 
 #define MAX_BIT_DEPTH_IN_BYTE (sizeof(DWORD))
 #define BACKOFF Sleep(20)
+#define SHORT_BACKOFF Sleep(1)
 
 constexpr auto unity = 1.0;
 constexpr auto chromaticity_scale_factor = 0.00002;
@@ -782,7 +783,7 @@ MagewellVideoCapturePin::VideoFrameGrabber::VideoFrameGrabber(MagewellVideoCaptu
 	this->pms->GetPointer(&pmsData);
 
 	#ifndef NO_QUILL
-	LOG_TRACE_L3(pin->mLogger, "[{}] Pinning {} bytes", this->pin->mLogPrefix, this->pms->GetSize());
+	LOG_TRACE_L2(pin->mLogger, "[{}] Pinning {} bytes", this->pin->mLogPrefix, this->pms->GetSize());
 	#endif
 
 	MWPinVideoBuffer(this->channel, pmsData, this->pms->GetSize());
@@ -791,7 +792,7 @@ MagewellVideoCapturePin::VideoFrameGrabber::VideoFrameGrabber(MagewellVideoCaptu
 MagewellVideoCapturePin::VideoFrameGrabber::~VideoFrameGrabber()
 {
 	#ifndef NO_QUILL
-	LOG_TRACE_L3(pin->mLogger, "[{}] Unpinning {} bytes, captured {} bytes", pin->mLogPrefix, pms->GetSize(),
+	LOG_TRACE_L2(pin->mLogger, "[{}] Unpinning {} bytes, captured {} bytes", pin->mLogPrefix, pms->GetSize(),
 		pms->GetActualDataLength());
 	#endif
 
@@ -834,7 +835,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 		if (pin->mVideoSignal.signalStatus.state != MWCAP_VIDEO_SIGNAL_LOCKED)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L3(pin->mLogger, "[{}] No signal {}, sleeping", pin->mLogPrefix,
+			LOG_TRACE_L2(pin->mLogger, "[{}] No signal {}, sleeping", pin->mLogPrefix,
 				static_cast<int>(pin->mVideoSignal.signalStatus.state));
 			#endif
 
@@ -2551,35 +2552,57 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 
 void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat)
 {
-	ASSERT(audioFormat->pcm);
-
 	// based on https://github.com/Nevcairiel/LAVFilters/blob/81c5676cb99d0acfb1457b8165a0becf5601cae3/decoder/LAVAudio/LAVAudio.cpp#L1186
 	pmt->majortype = MEDIATYPE_Audio;
-	// TODO support for non PCM format?
-	pmt->subtype = MEDIASUBTYPE_PCM;
-	pmt->formattype = FORMAT_WaveFormatEx;
 
-	WAVEFORMATEXTENSIBLE wfex;
-	memset(&wfex, 0, sizeof(wfex));
-
-	WAVEFORMATEX* wfe = &wfex.Format;
-	wfe->wFormatTag = static_cast<WORD>(pmt->subtype.Data1);
-	wfe->nChannels = audioFormat->outputChannelCount;
-	wfe->nSamplesPerSec = audioFormat->fs;
-	wfe->wBitsPerSample = audioFormat->bitDepth;
-	wfe->nBlockAlign = wfe->nChannels * wfe->wBitsPerSample / 8;
-	wfe->nAvgBytesPerSec = wfe->nSamplesPerSec * wfe->nBlockAlign;
-
-	if (audioFormat->outputChannelCount > 2 || wfe->wBitsPerSample > 16 || wfe->nSamplesPerSec > 48000)
+	if (audioFormat->pcm)
 	{
-		wfex.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-		wfex.Format.cbSize = sizeof(wfex) - sizeof(wfex.Format);
-		wfex.dwChannelMask = audioFormat->channelMask;
-		wfex.Samples.wValidBitsPerSample = wfex.Format.wBitsPerSample;
-		wfex.SubFormat = pmt->subtype;
+		pmt->subtype = MEDIASUBTYPE_PCM;
+		pmt->formattype = FORMAT_WaveFormatEx;
+
+		WAVEFORMATEXTENSIBLE wfex;
+		memset(&wfex, 0, sizeof(wfex));
+
+		WAVEFORMATEX* wfe = &wfex.Format;
+		wfe->wFormatTag = static_cast<WORD>(pmt->subtype.Data1);
+		wfe->nChannels = audioFormat->outputChannelCount;
+		wfe->nSamplesPerSec = audioFormat->fs;
+		wfe->wBitsPerSample = audioFormat->bitDepth;
+		wfe->nBlockAlign = wfe->nChannels * wfe->wBitsPerSample / 8;
+		wfe->nAvgBytesPerSec = wfe->nSamplesPerSec * wfe->nBlockAlign;
+
+		if (audioFormat->outputChannelCount > 2 || wfe->wBitsPerSample > 16 || wfe->nSamplesPerSec > 48000)
+		{
+			wfex.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+			wfex.Format.cbSize = sizeof(wfex) - sizeof(wfex.Format);
+			wfex.dwChannelMask = audioFormat->channelMask;
+			wfex.Samples.wValidBitsPerSample = wfex.Format.wBitsPerSample;
+			wfex.SubFormat = pmt->subtype;
+		}
+		pmt->SetSampleSize(wfe->wBitsPerSample * wfe->nChannels / 8);
+		pmt->SetFormat(reinterpret_cast<BYTE*>(&wfex), sizeof(wfex.Format) + wfex.Format.cbSize);
 	}
-	pmt->SetSampleSize(wfe->wBitsPerSample * wfe->nChannels / 8);
-	pmt->SetFormat(reinterpret_cast<BYTE*>(&wfex), sizeof(wfex.Format) + wfex.Format.cbSize);
+	else
+	{
+		pmt->subtype = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+		pmt->formattype = FORMAT_WaveFormatEx;
+
+		// https://learn.microsoft.com/en-us/windows/win32/coreaudio/representing-formats-for-iec-61937-transmissions
+		WAVEFORMATEXTENSIBLE_IEC61937 wfext;
+		wfext.FormatExt.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+		wfext.FormatExt.Format.nChannels = 2;						// One IEC 60958 Line.
+		wfext.FormatExt.Format.nSamplesPerSec = 192000;				// Link runs at 192 KHz.
+		wfext.FormatExt.Format.nAvgBytesPerSec = 768000;	 	    // 192 KHz * 4.
+		wfext.FormatExt.Format.nBlockAlign = 4;			            // 16 bits * 2 channels.
+		wfext.FormatExt.Format.wBitsPerSample = 16;					// Always at 16 bits over IEC 60958.
+		wfext.FormatExt.Format.cbSize = 34;							// Indicates that Format is part of a WAVEFORMATEXTENSIBLE_IEC61937 structure.
+		wfext.FormatExt.Samples.wValidBitsPerSample = 16;
+		wfext.FormatExt.dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    // Dolby 5.1 Surround.
+		wfext.FormatExt.SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+		wfext.dwEncodedSamplesPerSec = 48000;                       // Sample rate of encoded content.
+		wfext.dwEncodedChannelCount = 6;                            // Encoded data contains 6 channels.
+		wfext.dwAverageBytesPerSec = 0;                             // Ignored for this format.	
+	}
 }
 
 HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
@@ -2667,19 +2690,8 @@ bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat
 HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 {
 	auto h_channel = mFilter->GetChannelHandle();
-
-	mLastMwResult = MWCaptureAudioFrame(h_channel, &mAudioSignal.frameInfo);
-	if (MW_SUCCEEDED != mLastMwResult)
-	{
-		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed, sleeping", mLogPrefix);
-		#endif
-
-		BACKOFF;
-		return S_FALSE;
-	}
-
 	auto retVal = S_OK;
+
 	BYTE* pmsData;
 	pms->GetPointer(&pmsData);
 
@@ -2713,12 +2725,10 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 			auto inByteStartIdxL = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
 			inByteStartIdxL += pairIdx;										         // scroll to the left channel slot
 			inByteStartIdxL *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
-			inByteStartIdxL += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
 
 			auto inByteStartIdxR = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
-			inByteStartIdxR += pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2;	         // scroll to the right channel slot
+			inByteStartIdxR += pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2;	         // scroll to the left channel slot then jump to the matching right channel
 			inByteStartIdxR *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
-			inByteStartIdxR += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes; // skip past any zero padding
 
 			auto outByteStartIdxL = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
 			outByteStartIdxL += (outputChannelIdxL + outputOffsetL);                 // jump to the output channel slot
@@ -2728,54 +2738,45 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 			outByteStartIdxR += (outputChannelIdxR + outputOffsetR);                 // jump to the output channel slot
 			outByteStartIdxR *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
 
-			for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
+			if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
 			{
-				if (outputOffsetL != not_present)
-				{
-					auto inIdx = inByteStartIdxL + k;
-					auto outIdx = outByteStartIdxL + k;
-					bytesCaptured++;
-					if (outIdx < sampleSize)
-					{
-						auto sampleByte = pbAudioFrame[inIdx];
-						if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
-						{
-							// it's PCM so cast the value to an int, adjust gain, shift to add some bits and dither
-							// sampleByte *= mAudioFormat.lfeLevelAdjustment;
-						}
-						pmsData[outIdx] = sampleByte;
-					}
-					#ifndef NO_QUILL
-					if (sampleIdx == 0)
-					{
-						LOG_TRACE_L3(mLogger, "[{}] sample {}/{} of {} cpy {}->{} {}->{}", mLogPrefix, sampleIdx, k,
-							mAudioFormat.bitDepthInBytes, channelIdxL, outputChannelIdxL + outputOffsetL, inIdx, outIdx);
-					}
-					#endif
-				}
+				// it's PCM in network (big endian) byte order so
+				//   convert to an int
+				int sampleValueL = pbAudioFrame[inByteStartIdxL] << 24 | pbAudioFrame[inByteStartIdxL + 1] << 16 |
+					pbAudioFrame[inByteStartIdxL + 2] << 8 | pbAudioFrame[inByteStartIdxL + 3];
 
-				if (outputOffsetR != not_present)
+				int sampleValueR = pbAudioFrame[inByteStartIdxR] << 24 | pbAudioFrame[inByteStartIdxR + 1] << 16 |
+					pbAudioFrame[inByteStartIdxR + 2] << 8 | pbAudioFrame[inByteStartIdxR + 3];
+
+				//   adjust gain to a double
+				double scaledValueL = mAudioFormat.lfeLevelAdjustment * sampleValueL;
+				double scaledValueR = mAudioFormat.lfeLevelAdjustment * sampleValueR;
+
+				// TODO
+				//   triangular dither back to 16 or 24 bit PCM
+
+				//   convert back to bytes and write to the sample
+			}
+			else
+			{
+				// skip past any zero padding (if any)
+				inByteStartIdxL += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
+				inByteStartIdxR += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
+				for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
 				{
-					auto inIdx = inByteStartIdxR + k;
-					auto outIdx = outByteStartIdxR + k;
-					bytesCaptured++;
-					if (outIdx < sampleSize)
+					if (outputOffsetL != not_present)
 					{
-						auto sampleByte = pbAudioFrame[inIdx];
-						if (mAudioFormat.lfeChannelIndex == channelIdxR && mustRescaleLfe)
-						{
-							// it's PCM so cast the value to an int, adjust gain, shift to add some bits and dither
-							// sampleByte *= mAudioFormat.lfeLevelAdjustment;
-						}
-						pmsData[outIdx] = sampleByte;
+						auto outIdx = outByteStartIdxL + k;
+						bytesCaptured++;
+						if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxL + k];
 					}
-					#ifndef NO_QUILL
-					if (sampleIdx == 0)
+
+					if (outputOffsetR != not_present)
 					{
-						LOG_TRACE_L3(mLogger, "[{}] sample {}/{} of {} cpy {}->{} {}->{}", mLogPrefix, sampleIdx, k,
-							mAudioFormat.bitDepthInBytes, channelIdxR, outputChannelIdxR + outputOffsetR, inIdx, outIdx);
+						auto outIdx = outByteStartIdxR + k;
+						bytesCaptured++;
+						if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxR + k];
 					}
-					#endif
 				}
 			}
 			if (pairIdx == 0) samplesCaptured++;
@@ -2934,7 +2935,7 @@ bool MagewellAudioCapturePin::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
 		outputChannelCount;
 	if (pProperties->cBuffers < 1)
 	{
-		pProperties->cBuffers = 1;
+		pProperties->cBuffers = 4;
 		return false;
 	}
 	return true;
@@ -2981,7 +2982,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (newAudioFormat.outputChannelCount == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L3(mLogger, "[{}] No signal, sleeping", mLogPrefix);
+			LOG_TRACE_L2(mLogger, "[{}] No signal, sleeping", mLogPrefix);
 			#endif
 
 			BACKOFF;
@@ -3033,8 +3034,28 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		}
 		if (mStatusBits & MWCAP_NOTIFY_AUDIO_FRAME_BUFFERED)
 		{
-			retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
-			hasFrame = true;
+			mLastMwResult = MWCaptureAudioFrame(h_channel, &mAudioSignal.frameInfo);
+			if (MW_SUCCEEDED == mLastMwResult)
+			{
+				retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
+				if (SUCCEEDED(retVal))
+				{
+					hasFrame = true;
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Audio frame buffered but unable to get delivery buffer, sleeping", mLogPrefix);
+					#endif
+				}
+			}
+			else
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed, sleeping", mLogPrefix);
+				#endif
+			}
+			if (!hasFrame) SHORT_BACKOFF;
 		}
 	}
 	return retVal;
