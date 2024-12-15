@@ -39,6 +39,8 @@
 #define MAX_BIT_DEPTH_IN_BYTE (sizeof(DWORD))
 #define BACKOFF Sleep(20)
 #define SHORT_BACKOFF Sleep(1)
+// byte swap (big <=> little for a 16bit value)
+#define BSWAP16C(x) (((x) << 8 & 0xff00)  | ((x) >> 8 & 0x00ff))
 
 constexpr auto unity = 1.0;
 constexpr auto chromaticity_scale_factor = 0.00002;
@@ -1620,8 +1622,8 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 	}
 
 	#ifndef NO_QUILL
-	LOG_WARNING(mLogger, "[{}] Audio Status Fs: {} Bits: {} Channels: {} PCM: {}", mLogPrefix, mAudioFormat.fs,
-		mAudioFormat.bitDepth, mAudioFormat.outputChannelCount, mAudioFormat.pcm);
+	LOG_WARNING(mLogger, "[{}] Audio Status Fs: {} Bits: {} Channels: {} Codec: {}", mLogPrefix, mAudioFormat.fs,
+		mAudioFormat.bitDepth, mAudioFormat.outputChannelCount, codecNames[mAudioFormat.codec]);
 	#endif
 }
 
@@ -1694,7 +1696,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 	audioFormat->fs = audioIn.signalStatus.dwSampleRate;
 	audioFormat->bitDepth = audioIn.signalStatus.cBitsPerSample;
 	audioFormat->bitDepthInBytes = audioFormat->bitDepth / 8;
-	audioFormat->pcm = audioIn.signalStatus.bLPCM;
+	audioFormat->codec = audioIn.signalStatus.bLPCM ? PCM : BITSTREAM;
 	audioFormat->sampleInterval = 10000000.0 / audioFormat->fs;
 	audioFormat->channelAllocation = audioIn.audioInfo.byChannelAllocation;
 	audioFormat->channelValidityMask = audioIn.signalStatus.wChannelValid;
@@ -2555,7 +2557,7 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 	// based on https://github.com/Nevcairiel/LAVFilters/blob/81c5676cb99d0acfb1457b8165a0becf5601cae3/decoder/LAVAudio/LAVAudio.cpp#L1186
 	pmt->majortype = MEDIATYPE_Audio;
 
-	if (audioFormat->pcm)
+	if (audioFormat->codec == PCM)
 	{
 		pmt->subtype = MEDIASUBTYPE_PCM;
 		pmt->formattype = FORMAT_WaveFormatEx;
@@ -2584,24 +2586,71 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 	}
 	else
 	{
-		pmt->subtype = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
 		pmt->formattype = FORMAT_WaveFormatEx;
-
 		// https://learn.microsoft.com/en-us/windows/win32/coreaudio/representing-formats-for-iec-61937-transmissions
-		WAVEFORMATEXTENSIBLE_IEC61937 wfext;
-		wfext.FormatExt.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-		wfext.FormatExt.Format.nChannels = 2;						// One IEC 60958 Line.
-		wfext.FormatExt.Format.nSamplesPerSec = 192000;				// Link runs at 192 KHz.
-		wfext.FormatExt.Format.nAvgBytesPerSec = 768000;	 	    // 192 KHz * 4.
-		wfext.FormatExt.Format.nBlockAlign = 4;			            // 16 bits * 2 channels.
-		wfext.FormatExt.Format.wBitsPerSample = 16;					// Always at 16 bits over IEC 60958.
-		wfext.FormatExt.Format.cbSize = 34;							// Indicates that Format is part of a WAVEFORMATEXTENSIBLE_IEC61937 structure.
-		wfext.FormatExt.Samples.wValidBitsPerSample = 16;
-		wfext.FormatExt.dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    // Dolby 5.1 Surround.
-		wfext.FormatExt.SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
-		wfext.dwEncodedSamplesPerSec = 48000;                       // Sample rate of encoded content.
-		wfext.dwEncodedChannelCount = 6;                            // Encoded data contains 6 channels.
-		wfext.dwAverageBytesPerSec = 0;                             // Ignored for this format.	
+		WAVEFORMATEXTENSIBLE_IEC61937 wf_iec61937;
+		memset(&wf_iec61937, 0, sizeof(wf_iec61937));
+		WAVEFORMATEXTENSIBLE* wf = &wf_iec61937.FormatExt;
+		wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+
+		switch (audioFormat->codec)
+		{
+		case AC3:
+			wf->Format.nChannels = 2;						// One IEC 60958 Line.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+			wf_iec61937.dwEncodedSamplesPerSec = 48000;     
+			wf_iec61937.dwEncodedChannelCount = 6;          
+			wf_iec61937.dwAverageBytesPerSec = 0;           
+			break;
+		case EAC3:
+			pmt->subtype = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+			wf->Format.nChannels = 2;						// One IEC 60958 Line.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+			wf_iec61937.dwEncodedSamplesPerSec = 48000;     
+			wf_iec61937.dwEncodedChannelCount = 6;          
+			wf_iec61937.dwAverageBytesPerSec = 0;           
+			break;
+		case DTS:
+			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DTS_HD;
+			wf_iec61937.dwEncodedSamplesPerSec = 48000;
+			wf_iec61937.dwEncodedChannelCount = 8;
+			wf_iec61937.dwAverageBytesPerSec = 0;
+			break;
+		case TRUEHD:
+			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MLP;
+			wf_iec61937.dwEncodedSamplesPerSec = 48000;
+			wf_iec61937.dwEncodedChannelCount = 8;
+			wf_iec61937.dwAverageBytesPerSec = 0;
+			break;
+		case MAT:
+			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MAT21;
+			wf_iec61937.dwEncodedSamplesPerSec = 96000;
+			wf_iec61937.dwEncodedChannelCount = 8;
+			wf_iec61937.dwAverageBytesPerSec = 0;
+			break;
+		case BITSTREAM:
+		case PCM:
+			// should never get here
+			break;
+		}
+		wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+		wf->Format.nSamplesPerSec = 192000;
+		wf->Format.wBitsPerSample = 16;
+		wf->Samples.wValidBitsPerSample = 16;
+		wf->Format.nBlockAlign = wf->Format.wBitsPerSample / 8 * wf->Format.nChannels;
+		wf->Format.nAvgBytesPerSec = wf->Format.nSamplesPerSec * wf->Format.nBlockAlign;
+		wf->Format.cbSize = sizeof(wf_iec61937) - sizeof(wf->Format);
+
+		pmt->SetSampleSize(wf->Format.nBlockAlign);
+		pmt->SetFormat(reinterpret_cast<BYTE*>(&wf_iec61937), sizeof(wf_iec61937) + wf->Format.cbSize);
 	}
 }
 
@@ -2668,12 +2717,12 @@ bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat
 		LOG_INFO(mLogger, "[{}] Fs change {} to {}", mLogPrefix, mAudioFormat.fs, newAudioFormat->fs);
 		#endif
 	}
-	if (mAudioFormat.pcm != newAudioFormat->pcm)
+	if (mAudioFormat.codec != newAudioFormat->codec)
 	{
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] PCM change {} to {}", mLogPrefix, mAudioFormat.pcm, newAudioFormat->pcm);
+		LOG_INFO(mLogger, "[{}] Codec change {} to {}", mLogPrefix, codecNames[mAudioFormat.codec], codecNames[newAudioFormat->codec]);
 		#endif
 	}
 	if (mAudioFormat.channelAllocation != newAudioFormat->channelAllocation)
@@ -2740,7 +2789,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 
 			if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
 			{
-				// it's PCM in network (big endian) byte order so
+				// PCM in network (big endian) byte order hence have to shift rather than use memcpy
 				//   convert to an int
 				int sampleValueL = pbAudioFrame[inByteStartIdxL] << 24 | pbAudioFrame[inByteStartIdxL + 1] << 16 |
 					pbAudioFrame[inByteStartIdxL + 2] << 8 | pbAudioFrame[inByteStartIdxL + 3];
@@ -2890,9 +2939,7 @@ STDMETHODIMP MagewellAudioCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** 
 	GetMediaType(&cmt);
 	*pmt = CreateMediaType(&cmt);
 
-	auto wfe = reinterpret_cast<WAVEFORMATEXTENSIBLE*>((*pmt)->pbFormat);
 	auto pascc = reinterpret_cast<AUDIO_STREAM_CONFIG_CAPS*>(pSCC);
-
 	pascc->guid = FORMAT_WaveFormatEx;
 	pascc->MinimumChannels = mAudioFormat.outputChannelCount;
 	pascc->MaximumChannels = mAudioFormat.outputChannelCount;
@@ -2910,8 +2957,8 @@ STDMETHODIMP MagewellAudioCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** 
 HRESULT MagewellAudioCapturePin::DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat)
 {
 	#ifndef NO_QUILL
-	LOG_WARNING(mLogger, "[{}] Proposing new audio format Fs: {} Bits: {} Channels: {} PCM: {}", mLogPrefix,
-		newAudioFormat->fs, newAudioFormat->bitDepth, newAudioFormat->outputChannelCount, newAudioFormat->pcm);
+	LOG_WARNING(mLogger, "[{}] Proposing new audio format Fs: {} Bits: {} Channels: {} Codec: {}", mLogPrefix,
+		newAudioFormat->fs, newAudioFormat->bitDepth, newAudioFormat->outputChannelCount, codecNames[newAudioFormat->codec]);
 	#endif
 
 	auto newSize = MWCAP_AUDIO_SAMPLES_PER_FRAME * newAudioFormat->bitDepthInBytes * newAudioFormat->outputChannelCount;
@@ -2989,29 +3036,6 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			continue;
 		}
 
-		// detect format changes
-		if (ShouldChangeMediaType(&newAudioFormat))
-		{
-			#ifndef NO_QUILL
-			LOG_WARNING(mLogger, "[{}] AudioFormat changed! Attempting to reconnect", mLogPrefix);
-			#endif
-
-			CMediaType proposedMediaType(m_mt);
-			AudioFormatToMediaType(&proposedMediaType, &newAudioFormat);
-			auto hr = DoChangeMediaType(&proposedMediaType, &newAudioFormat);
-			if (FAILED(hr))
-			{
-				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix,
-					hr);
-				#endif
-
-				// TODO communicate that we need to change somehow
-				BACKOFF;
-			}
-			continue;
-		}
-
 		mLastMwResult = MWGetNotifyStatus(h_channel, mNotify, &mStatusBits);
 		if (mStatusBits & MWCAP_NOTIFY_AUDIO_SIGNAL_CHANGE)
 		{
@@ -3032,11 +3056,44 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			BACKOFF;
 			continue;
 		}
+
 		if (mStatusBits & MWCAP_NOTIFY_AUDIO_FRAME_BUFFERED)
 		{
 			mLastMwResult = MWCaptureAudioFrame(h_channel, &mAudioSignal.frameInfo);
 			if (MW_SUCCEEDED == mLastMwResult)
 			{
+				// some devices report compressed audio as 192kHz LPCM
+				auto mustProbe = newAudioFormat.codec == BITSTREAM || newAudioFormat.fs == 192000;
+				Codec contentCodec = PCM;
+				if (mustProbe)
+				{
+					ProbeBitstreamBuffer(reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples),
+						MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS, &contentCodec);
+				}
+				newAudioFormat.codec = contentCodec;
+				// detect format changes
+				if (ShouldChangeMediaType(&newAudioFormat))
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] AudioFormat changed! Attempting to reconnect", mLogPrefix);
+					#endif
+
+					CMediaType proposedMediaType(m_mt);
+					AudioFormatToMediaType(&proposedMediaType, &newAudioFormat);
+					auto hr = DoChangeMediaType(&proposedMediaType, &newAudioFormat);
+					if (FAILED(hr))
+					{
+						#ifndef NO_QUILL
+						LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix,
+							hr);
+						#endif
+
+						// TODO communicate that we need to change somehow
+						BACKOFF;
+					}
+					continue;
+				}
+
 				retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
 				if (SUCCEEDED(retVal))
 				{
@@ -3085,4 +3142,100 @@ HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
 	}
 
 	return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
+}
+
+
+// probes a non PCM buffer for the codec based on format of the IEC 61937 dataframes
+// returns as soon as 2
+HRESULT MagewellAudioCapturePin::ProbeBitstreamBuffer(BYTE* pBuf, int bufSize, enum Codec* codec)
+{
+	const BYTE* buf = pBuf;
+	const BYTE* probeEnd = buf + bufSize;
+	const BYTE* expectedCode = buf + 7;
+	uint32_t state = 0;
+	int sync_codes = 0;
+	int consecutive_codes = 0;
+	int offset;
+	uint32_t syncWord = BSWAP16C(IEC61937_SYNCWORD_1) << 16 | BSWAP16C(IEC61937_SYNCWORD_2);
+	for (; buf < probeEnd; buf++) {
+		const auto val = *buf;
+		state = state << 8 | val;
+
+		if (state == syncWord && buf[1] < 0x37) {
+			sync_codes++;
+
+			if (buf == expectedCode) 
+			{
+				if (++consecutive_codes >= 2)
+				{
+					return S_OK;
+				}
+			}
+			else
+			{
+				// unexpected discontinuity, return nothing
+				*codec = PCM;
+				return S_FALSE;
+			}
+
+			// skip to the next sync code
+			auto dataType = static_cast<enum IEC61937DataType>(buf[2] << 8 | buf[1]);
+			if (!GetBitstreamOffsetCodec(dataType, &offset, codec)) {
+				if (buf + offset >= pBuf + bufSize)
+					break;
+				expectedCode = buf + offset;
+				buf = expectedCode - 7;
+			}
+		}
+	}
+	// didn't find consistent codecs, return nothing
+	*codec = PCM;
+	return S_FALSE;
+}
+
+// identifies codecs that are known/expected to be carried via HDMI
+// from IEC 61937-2 Table 2
+// offset = Repetition period of data - burst measured in IEC 60958 frames
+HRESULT MagewellAudioCapturePin::GetBitstreamOffsetCodec(enum IEC61937DataType dataType, int* offset, enum Codec* codec)
+{
+	switch (dataType & 0xff)
+	{
+	case IEC61937_AC3:
+		*offset = 1536 << 2; // see IEC 61937-3 for definition of R-AC-3 which drives this number
+		*codec = AC3;
+		break;
+	case IEC61937_MPEG1_LAYER1:
+		break;
+	case IEC61937_MPEG1_LAYER23:
+		break;
+	case IEC61937_MPEG2_EXT:
+		break;
+	case IEC61937_MPEG2_AAC:
+		break;
+	case IEC61937_MPEG2_LAYER1_LSF:
+		break;
+	case IEC61937_MPEG2_LAYER2_LSF:
+		break;
+	case IEC61937_MPEG2_LAYER3_LSF:
+		break;
+	case IEC61937_DTS1:
+		*offset = 2048;
+		*codec = DTS;
+		break;
+	case IEC61937_DTS2:
+		*offset = 4096;
+		*codec = DTS;
+		break;
+	case IEC61937_DTS3:
+		*offset = 8192;
+		*codec = DTS;
+		break;
+	case IEC61937_EAC3:
+		*offset = 24576;
+		*codec = EAC3;
+		break;
+	default:
+		return S_FALSE;
+	}
+	return S_OK;
 }
