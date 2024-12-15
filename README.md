@@ -17,7 +17,7 @@ Use at own risk, tested on one machine with a single source device
 
 Outputs some basic info to `%TEMP%\magewell_capture_YYYYMMDD_HHMMSS.log`
 
-Use the -debug or -logging distribution for much (much) more verbose logging (NB: performance may be impacted, disk space use will grow rapidly, use for investigation purposes only).
+Use the -trace or -warn distribution in order to get access to logs (quite verbose logs in the trace case) that detail what the filter sees (NB: performance may be impacted, disk space use can grow rapidly in the trace case, recommended use for investigation purposes only).
 
 ## Limitations
 
