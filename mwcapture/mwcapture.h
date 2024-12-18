@@ -40,6 +40,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include <source.h>
 #include <dvdmedia.h>
 #include <array>
+#include <wmcodecdsp.h>
 
 #include "LibMWCapture/MWCapture.h"
 

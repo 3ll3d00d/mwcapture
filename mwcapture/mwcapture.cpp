@@ -29,7 +29,6 @@
 #include <streams.h>
 #include <filesystem>
 #include <utility>
-#include <wmcodecdsp.h>
  // linking side data GUIDs fails without this
 #include "mwcapture.h"
 
@@ -3078,7 +3077,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			{
 				// some devices report compressed audio as 192kHz LPCM
 				auto mustProbe = newAudioFormat.codec == BITSTREAM || newAudioFormat.fs > 48000;
-				Codec* contentCodec;
+				Codec* contentCodec{};
 				*contentCodec = PCM;
 				if (mustProbe)
 				{
