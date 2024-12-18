@@ -29,14 +29,15 @@
 #include <streams.h>
 #include <filesystem>
 #include <utility>
+#include <wmcodecdsp.h>
  // linking side data GUIDs fails without this
+#include "mwcapture.h"
+
 #include <initguid.h>
 
 #include "lavfilters_side_data.h"
-#include "mwcapture.h"
 #include <cmath>
 
-#define MAX_BIT_DEPTH_IN_BYTE (sizeof(DWORD))
 #define BACKOFF Sleep(20)
 #define SHORT_BACKOFF Sleep(1)
 // byte swap (big <=> little for a 16bit value)
@@ -2556,11 +2557,11 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 {
 	// based on https://github.com/Nevcairiel/LAVFilters/blob/81c5676cb99d0acfb1457b8165a0becf5601cae3/decoder/LAVAudio/LAVAudio.cpp#L1186
 	pmt->majortype = MEDIATYPE_Audio;
+	pmt->formattype = FORMAT_WaveFormatEx;
 
 	if (audioFormat->codec == PCM)
 	{
 		pmt->subtype = MEDIASUBTYPE_PCM;
-		pmt->formattype = FORMAT_WaveFormatEx;
 
 		WAVEFORMATEXTENSIBLE wfex;
 		memset(&wfex, 0, sizeof(wfex));
@@ -2586,7 +2587,7 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 	}
 	else
 	{
-		pmt->formattype = FORMAT_WaveFormatEx;
+		// working assumption is that LAVAudio is downstream so use a format it supports
 		// https://learn.microsoft.com/en-us/windows/win32/coreaudio/representing-formats-for-iec-61937-transmissions
 		WAVEFORMATEXTENSIBLE_IEC61937 wf_iec61937;
 		memset(&wf_iec61937, 0, sizeof(wf_iec61937));
@@ -2596,53 +2597,53 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 		switch (audioFormat->codec)
 		{
 		case AC3:
-			wf->Format.nChannels = 2;						// One IEC 60958 Line.
+			pmt->subtype = MEDIASUBTYPE_DOLBY_AC3;
+			wf->Format.nChannels = 2;						// 1 IEC 60958 Line.
 			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    
 			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
-			wf_iec61937.dwEncodedSamplesPerSec = 48000;     
 			wf_iec61937.dwEncodedChannelCount = 6;          
-			wf_iec61937.dwAverageBytesPerSec = 0;           
+			wf->Format.nSamplesPerSec = 48000;
 			break;
 		case EAC3:
-			pmt->subtype = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
-			wf->Format.nChannels = 2;						// One IEC 60958 Line.
+			pmt->subtype = MEDIASUBTYPE_DOLBY_DDPLUS;
+			wf->Format.nChannels = 2;						// 1 IEC 60958 Line.
 			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    
 			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
-			wf_iec61937.dwEncodedSamplesPerSec = 48000;     
 			wf_iec61937.dwEncodedChannelCount = 6;          
-			wf_iec61937.dwAverageBytesPerSec = 0;           
+			wf->Format.nSamplesPerSec = 192000;
 			break;
 		case DTS:
+			pmt->subtype = MEDIASUBTYPE_DTS;
+			wf->Format.nChannels = 2;						// 1 IEC 60958 Lines.
+			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DTS;
+			wf_iec61937.dwEncodedChannelCount = 6;
+			wf->Format.nSamplesPerSec = 48000;
+			break;
+		case DTSHD:
+			pmt->subtype = MEDIASUBTYPE_DTS_HD;
 			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
 			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
 			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DTS_HD;
-			wf_iec61937.dwEncodedSamplesPerSec = 48000;
 			wf_iec61937.dwEncodedChannelCount = 8;
-			wf_iec61937.dwAverageBytesPerSec = 0;
+			wf->Format.nSamplesPerSec = 192000;
 			break;
 		case TRUEHD:
+			pmt->subtype = MEDIASUBTYPE_DOLBY_TRUEHD;
 			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
 			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
 			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MLP;
-			wf_iec61937.dwEncodedSamplesPerSec = 48000;
 			wf_iec61937.dwEncodedChannelCount = 8;
-			wf_iec61937.dwAverageBytesPerSec = 0;
-			break;
-		case MAT:
-			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MAT21;
-			wf_iec61937.dwEncodedSamplesPerSec = 96000;
-			wf_iec61937.dwEncodedChannelCount = 8;
-			wf_iec61937.dwAverageBytesPerSec = 0;
+			wf->Format.nSamplesPerSec = 192000;
 			break;
 		case BITSTREAM:
 		case PCM:
 			// should never get here
 			break;
 		}
+		wf_iec61937.dwEncodedSamplesPerSec = 48000;
+		wf_iec61937.dwAverageBytesPerSec = 0;
 		wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-		wf->Format.nSamplesPerSec = 192000;
 		wf->Format.wBitsPerSample = 16;
 		wf->Samples.wValidBitsPerSample = 16;
 		wf->Format.nBlockAlign = wf->Format.wBitsPerSample / 8 * wf->Format.nChannels;
@@ -2743,92 +2744,102 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 
 	BYTE* pmsData;
 	pms->GetPointer(&pmsData);
-
-	auto pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
 	auto sampleSize = pms->GetSize();
 	auto bytesCaptured = 0L;
 	auto samplesCaptured = 0;
 
-	// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
-	// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
-	// must also apply the channel offsets to ensure each input channel is offset as necessary to be written to the correct output channel index
-	auto outputChannelIdxL = -1;
-	auto outputChannelIdxR = -1;
-	auto outputChannels = -1;
-	auto mustRescaleLfe = mAudioFormat.lfeLevelAdjustment != unity; // NOLINT(clang-diagnostic-float-equal)
-
-	for (auto pairIdx = 0; pairIdx < mAudioFormat.inputChannelCount / 2; ++pairIdx)
+	if (mAudioFormat.codec != PCM)
 	{
-		auto channelIdxL = pairIdx * 2;
-		auto outputOffsetL = mAudioFormat.channelOffsets[channelIdxL];
-		if (outputOffsetL != not_present) outputChannelIdxL = ++outputChannels;
+		memcpy(pmsData, mDataBurstBuffer, mDataBurstSize);
+		pms->SetActualDataLength(mDataBurstSize);
+		samplesCaptured++;
+		bytesCaptured = mDataBurstSize;
+	}
+	else
+	{
+		auto pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
 
-		auto channelIdxR = channelIdxL + 1;
-		auto outputOffsetR = mAudioFormat.channelOffsets[channelIdxR];
-		if (outputOffsetR != not_present) outputChannelIdxR = ++outputChannels;
+		// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
+		// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
+		// must also apply the channel offsets to ensure each input channel is offset as necessary to be written to the correct output channel index
+		auto outputChannelIdxL = -1;
+		auto outputChannelIdxR = -1;
+		auto outputChannels = -1;
+		auto mustRescaleLfe = mAudioFormat.lfeLevelAdjustment != unity; // NOLINT(clang-diagnostic-float-equal)
 
-		if (outputOffsetL == not_present && outputOffsetR == not_present) continue;
-
-		for (auto sampleIdx = 0; sampleIdx < MWCAP_AUDIO_SAMPLES_PER_FRAME; sampleIdx++)
+		for (auto pairIdx = 0; pairIdx < mAudioFormat.inputChannelCount / 2; ++pairIdx)
 		{
-			auto inByteStartIdxL = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
-			inByteStartIdxL += pairIdx;										         // scroll to the left channel slot
-			inByteStartIdxL *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
+			auto channelIdxL = pairIdx * 2;
+			auto outputOffsetL = mAudioFormat.channelOffsets[channelIdxL];
+			if (outputOffsetL != not_present) outputChannelIdxL = ++outputChannels;
 
-			auto inByteStartIdxR = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;     // scroll to the sample block
-			inByteStartIdxR += pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2;	         // scroll to the left channel slot then jump to the matching right channel
-			inByteStartIdxR *= MAX_BIT_DEPTH_IN_BYTE;								 // convert from slot index to byte index
+			auto channelIdxR = channelIdxL + 1;
+			auto outputOffsetR = mAudioFormat.channelOffsets[channelIdxR];
+			if (outputOffsetR != not_present) outputChannelIdxR = ++outputChannels;
 
-			auto outByteStartIdxL = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
-			outByteStartIdxL += (outputChannelIdxL + outputOffsetL);                 // jump to the output channel slot
-			outByteStartIdxL *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
+			if (outputOffsetL == not_present && outputOffsetR == not_present) continue;
 
-			auto outByteStartIdxR = sampleIdx * mAudioFormat.outputChannelCount; // scroll to the sample block
-			outByteStartIdxR += (outputChannelIdxR + outputOffsetR);                 // jump to the output channel slot
-			outByteStartIdxR *= mAudioFormat.bitDepthInBytes;                        // convert from slot index to byte index
-
-			if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
+			for (auto sampleIdx = 0; sampleIdx < MWCAP_AUDIO_SAMPLES_PER_FRAME; sampleIdx++)
 			{
-				// PCM in network (big endian) byte order hence have to shift rather than use memcpy
-				//   convert to an int
-				int sampleValueL = pbAudioFrame[inByteStartIdxL] << 24 | pbAudioFrame[inByteStartIdxL + 1] << 16 |
-					pbAudioFrame[inByteStartIdxL + 2] << 8 | pbAudioFrame[inByteStartIdxL + 3];
+				auto inByteStartIdxL = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;    // scroll to the sample block
+				inByteStartIdxL += pairIdx;										        // scroll to the left channel slot
+				inByteStartIdxL *= maxBitDepthInBytes;									// convert from slot index to byte index
 
-				int sampleValueR = pbAudioFrame[inByteStartIdxR] << 24 | pbAudioFrame[inByteStartIdxR + 1] << 16 |
-					pbAudioFrame[inByteStartIdxR + 2] << 8 | pbAudioFrame[inByteStartIdxR + 3];
+				auto inByteStartIdxR = sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS;    // scroll to the sample block
+				inByteStartIdxR += pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2;	        // scroll to the left channel slot then jump to the matching right channel
+				inByteStartIdxR *= maxBitDepthInBytes;									// convert from slot index to byte index
 
-				//   adjust gain to a double
-				double scaledValueL = mAudioFormat.lfeLevelAdjustment * sampleValueL;
-				double scaledValueR = mAudioFormat.lfeLevelAdjustment * sampleValueR;
+				auto outByteStartIdxL = sampleIdx * mAudioFormat.outputChannelCount;// scroll to the sample block
+				outByteStartIdxL += (outputChannelIdxL + outputOffsetL);                // jump to the output channel slot
+				outByteStartIdxL *= mAudioFormat.bitDepthInBytes;                       // convert from slot index to byte index
 
-				// TODO
-				//   triangular dither back to 16 or 24 bit PCM
+				auto outByteStartIdxR = sampleIdx * mAudioFormat.outputChannelCount;// scroll to the sample block
+				outByteStartIdxR += (outputChannelIdxR + outputOffsetR);                // jump to the output channel slot
+				outByteStartIdxR *= mAudioFormat.bitDepthInBytes;                       // convert from slot index to byte index
 
-				//   convert back to bytes and write to the sample
-			}
-			else
-			{
-				// skip past any zero padding (if any)
-				inByteStartIdxL += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
-				inByteStartIdxR += MAX_BIT_DEPTH_IN_BYTE - mAudioFormat.bitDepthInBytes;
-				for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
+				if (mAudioFormat.lfeChannelIndex == channelIdxL && mustRescaleLfe)
 				{
-					if (outputOffsetL != not_present)
-					{
-						auto outIdx = outByteStartIdxL + k;
-						bytesCaptured++;
-						if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxL + k];
-					}
+					// PCM in network (big endian) byte order hence have to shift rather than use memcpy
+					//   convert to an int
+					int sampleValueL = pbAudioFrame[inByteStartIdxL] << 24 | pbAudioFrame[inByteStartIdxL + 1] << 16 |
+						pbAudioFrame[inByteStartIdxL + 2] << 8 | pbAudioFrame[inByteStartIdxL + 3];
 
-					if (outputOffsetR != not_present)
+					int sampleValueR = pbAudioFrame[inByteStartIdxR] << 24 | pbAudioFrame[inByteStartIdxR + 1] << 16 |
+						pbAudioFrame[inByteStartIdxR + 2] << 8 | pbAudioFrame[inByteStartIdxR + 3];
+
+					//   adjust gain to a double
+					double scaledValueL = mAudioFormat.lfeLevelAdjustment * sampleValueL;
+					double scaledValueR = mAudioFormat.lfeLevelAdjustment * sampleValueR;
+
+					// TODO
+					//   triangular dither back to 16 or 24 bit PCM
+
+					//   convert back to bytes and write to the sample
+				}
+				else
+				{
+					// skip past any zero padding (if any)
+					inByteStartIdxL += maxBitDepthInBytes - mAudioFormat.bitDepthInBytes;
+					inByteStartIdxR += maxBitDepthInBytes - mAudioFormat.bitDepthInBytes;
+					for (int k = 0; k < mAudioFormat.bitDepthInBytes; ++k)
 					{
-						auto outIdx = outByteStartIdxR + k;
-						bytesCaptured++;
-						if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxR + k];
+						if (outputOffsetL != not_present)
+						{
+							auto outIdx = outByteStartIdxL + k;
+							bytesCaptured++;
+							if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxL + k];
+						}
+
+						if (outputOffsetR != not_present)
+						{
+							auto outIdx = outByteStartIdxR + k;
+							bytesCaptured++;
+							if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxR + k];
+						}
 					}
 				}
+				if (pairIdx == 0) samplesCaptured++;
 			}
-			if (pairIdx == 0) samplesCaptured++;
 		}
 	}
 	mFrameCounter++;
@@ -2888,6 +2899,9 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
 
 	LOG_INFO(mLogger, "[{}] MagewellAudioCapturePin::OnThreadCreate", mLogPrefix);
 	#endif
+
+	memset(mCompressedBuffer, 0, sizeof(mCompressedBuffer));
+	memset(mDataBurstBuffer, 0, sizeof(mDataBurstBuffer));
 
 	// Wait Events
 	mNotifyEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -3063,14 +3077,19 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			if (MW_SUCCEEDED == mLastMwResult)
 			{
 				// some devices report compressed audio as 192kHz LPCM
-				auto mustProbe = newAudioFormat.codec == BITSTREAM || newAudioFormat.fs == 192000;
-				Codec contentCodec = PCM;
+				auto mustProbe = newAudioFormat.codec == BITSTREAM || newAudioFormat.fs > 48000;
+				Codec* contentCodec;
+				*contentCodec = PCM;
 				if (mustProbe)
 				{
-					ProbeBitstreamBuffer(reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples),
-						MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS, &contentCodec);
+					CopyToBitstreamBuffer(reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples));
+					uint16_t bufferSize = mAudioFormat.bitDepthInBytes * MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.inputChannelCount;
+					if (S_OK != ProbeBitstreamBuffer(bufferSize, &contentCodec))
+					{
+						*contentCodec = PCM;
+					}
 				}
-				newAudioFormat.codec = contentCodec;
+				newAudioFormat.codec = *contentCodec;
 				// detect format changes
 				if (ShouldChangeMediaType(&newAudioFormat))
 				{
@@ -3084,8 +3103,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					if (FAILED(hr))
 					{
 						#ifndef NO_QUILL
-						LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix,
-							hr);
+						LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix, hr);
 						#endif
 
 						// TODO communicate that we need to change somehow
@@ -3144,98 +3162,128 @@ HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
 	return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
 }
 
-
-// probes a non PCM buffer for the codec based on format of the IEC 61937 dataframes
-// returns as soon as 2
-HRESULT MagewellAudioCapturePin::ProbeBitstreamBuffer(BYTE* pBuf, int bufSize, enum Codec* codec)
+// copies the inbound byte stream into a format that can be probed
+void MagewellAudioCapturePin::CopyToBitstreamBuffer(BYTE* pBuf)
 {
-	const BYTE* buf = pBuf;
-	const BYTE* probeEnd = buf + bufSize;
-	const BYTE* expectedCode = buf + 7;
-	uint32_t state = 0;
-	int sync_codes = 0;
-	int consecutive_codes = 0;
-	int offset;
-	uint32_t syncWord = BSWAP16C(IEC61937_SYNCWORD_1) << 16 | BSWAP16C(IEC61937_SYNCWORD_2);
-	for (; buf < probeEnd; buf++) {
-		const auto val = *buf;
-		state = state << 8 | val;
-
-		if (state == syncWord && buf[1] < 0x37) {
-			sync_codes++;
-
-			if (buf == expectedCode) 
-			{
-				if (++consecutive_codes >= 2)
-				{
-					return S_OK;
-				}
-			}
-			else
-			{
-				// unexpected discontinuity, return nothing
-				*codec = PCM;
-				return S_FALSE;
-			}
-
-			// skip to the next sync code
-			auto dataType = static_cast<enum IEC61937DataType>(buf[2] << 8 | buf[1]);
-			if (!GetBitstreamOffsetCodec(dataType, &offset, codec)) {
-				if (buf + offset >= pBuf + bufSize)
-					break;
-				expectedCode = buf + offset;
-				buf = expectedCode - 7;
+	// copies from input to output skipping zero bytes and with a byte swap per sample
+	for (auto pairIdx = 0; pairIdx < mAudioFormat.inputChannelCount / 2; ++pairIdx)
+	{
+		for (auto sampleIdx = 0; sampleIdx < MWCAP_AUDIO_SAMPLES_PER_FRAME; sampleIdx++)
+		{
+			int inStartL = (sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS + pairIdx) * maxBitDepthInBytes + mAudioFormat.bitDepthInBytes - 1;
+			int inStartR = (sampleIdx * MWCAP_AUDIO_MAX_NUM_CHANNELS + pairIdx + MWCAP_AUDIO_MAX_NUM_CHANNELS / 2) * maxBitDepthInBytes + mAudioFormat.bitDepthInBytes - 1;
+			int outStart = (sampleIdx * 2 + pairIdx * 2) * mAudioFormat.bitDepthInBytes;
+			for (int byteIdx = 0; byteIdx < mAudioFormat.bitDepthInBytes; ++byteIdx) {
+				mCompressedBuffer[outStart + byteIdx] = pBuf[inStartL - byteIdx];
+				mCompressedBuffer[outStart + mAudioFormat.bitDepthInBytes + byteIdx] = pBuf[inStartR - byteIdx];
 			}
 		}
 	}
-	// didn't find consistent codecs, return nothing
-	*codec = PCM;
-	return S_FALSE;
 }
 
-// identifies codecs that are known/expected to be carried via HDMI
+// probes a non PCM buffer for the codec based on format of the IEC 61937 dataframes
+HRESULT MagewellAudioCapturePin::ProbeBitstreamBuffer(uint16_t bufSize, enum Codec** codec)
+{
+	mDataBurstSize = 0;
+	auto bytesRead = 0;
+	auto burstSize = 0;
+	auto burstRead = 0;
+	auto foundPaPb = false;
+	while (bytesRead < bufSize)  // expect to get a single burst per frame so this should only loop twice (once to read the header, once to copy the data)
+	{
+		if (burstSize > 0)
+		{
+			auto toCopy = std::min(burstSize, bufSize - bytesRead);
+			#ifndef NO_QUILL
+			LOG_TRACE_L3(mLogger, "[{}] Copying {} of {} bytes of encoded audio", mLogPrefix, toCopy, burstSize);
+			#endif
+			memcpy(mCompressedBuffer + bytesRead, mDataBurstBuffer + burstRead, toCopy);
+		}
+
+		// Find Pa Pb preamble words "F8 72 4E 1F"
+		for (; (bytesRead < bufSize - 3) && !foundPaPb; ++bytesRead)
+		{
+			if (mCompressedBuffer[bytesRead] == 0xf8 && mCompressedBuffer[bytesRead + 1] == 0x72 &&
+				mCompressedBuffer[bytesRead + 2] == 0x4e && mCompressedBuffer[bytesRead + 3] == 0x1f)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L3(mLogger, "[{}] Found PaPb at position {}", mLogPrefix, bytesRead);
+				#endif
+				foundPaPb = true;
+				bytesRead += 2 * sizeof(WORD);
+				break;
+			}
+		}
+
+		if (!foundPaPb)
+		{
+			continue;
+		}
+
+		// grab Pc Pd preamble words
+		auto bytesToCopy = std::min(bufSize - bytesRead, 4 - mPcPdBufferSize);
+		memcpy(mPcPdBuffer, mCompressedBuffer + bytesRead, bytesToCopy);
+		mPcPdBufferSize += bytesToCopy;
+		bytesRead += bytesToCopy;
+
+		if (mPcPdBufferSize != 4)
+		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L3(mLogger, "[{}] Found PcPd at position {} but only {} bytes available", mLogPrefix, bytesRead - bytesToCopy, bytesToCopy);
+			#endif
+			continue;
+		}
+
+		burstSize = ((static_cast<WORD>(mPcPdBuffer[2]) << 8) + static_cast<WORD>(mPcPdBuffer[3])) / 8;
+		GetCodecFromIEC61937Preamble(IEC61937DataType{ mPcPdBuffer[1] & 0x7f }, &burstSize, *codec);
+		mPcPdBufferSize = 0;
+		foundPaPb = FALSE;
+		#ifndef NO_QUILL
+		LOG_TRACE_L3(mLogger, "[{}] Found codec {} with burst size {}", mLogPrefix, static_cast<int>(**codec), burstSize);
+		#endif
+	}
+	#ifndef NO_QUILL
+	LOG_TRACE_L3(mLogger, "[{}] Read {} bytes of {} from burst for codec {}", mLogPrefix, burstRead, burstSize, static_cast<int>(**codec));
+	#endif
+	if (burstSize == burstRead)
+	{
+		mDataBurstSize = burstSize;
+		return S_OK;
+	}
+	else
+	{
+		return S_FALSE;
+	}
+}
+
+// identifies codecs that are known/expected to be carried via HDMI in an AV setup
 // from IEC 61937-2 Table 2
-// offset = Repetition period of data - burst measured in IEC 60958 frames
-HRESULT MagewellAudioCapturePin::GetBitstreamOffsetCodec(enum IEC61937DataType dataType, int* offset, enum Codec* codec)
+HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, int* burstSize, enum Codec* codec)
 {
 	switch (dataType & 0xff)
 	{
 	case IEC61937_AC3:
-		*offset = 1536 << 2; // see IEC 61937-3 for definition of R-AC-3 which drives this number
 		*codec = AC3;
 		break;
-	case IEC61937_MPEG1_LAYER1:
-		break;
-	case IEC61937_MPEG1_LAYER23:
-		break;
-	case IEC61937_MPEG2_EXT:
-		break;
-	case IEC61937_MPEG2_AAC:
-		break;
-	case IEC61937_MPEG2_LAYER1_LSF:
-		break;
-	case IEC61937_MPEG2_LAYER2_LSF:
-		break;
-	case IEC61937_MPEG2_LAYER3_LSF:
-		break;
 	case IEC61937_DTS1:
-		*offset = 2048;
-		*codec = DTS;
-		break;
 	case IEC61937_DTS2:
-		*offset = 4096;
+	case IEC61937_DTS3:
 		*codec = DTS;
 		break;
-	case IEC61937_DTS3:
-		*offset = 8192;
-		*codec = DTS;
+	case IEC61937_DTSHD:
+		*burstSize *= 8;
+		*codec = DTSHD;
 		break;
 	case IEC61937_EAC3:
-		*offset = 24576;
 		*codec = EAC3;
+		*burstSize *= 8;
+		break;
+	case IEC61937_TRUEHD:
+		*codec = TRUEHD;
+		*burstSize *= 8;
 		break;
 	default:
-		return S_FALSE;
+		break;
 	}
 	return S_OK;
 }
