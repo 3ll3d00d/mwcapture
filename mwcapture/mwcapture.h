@@ -25,10 +25,10 @@ constexpr auto not_present = 1024;
 
 struct CustomFrontendOptions
 {
-    static constexpr quill::QueueType queue_type = quill::QueueType::BoundedDropping;
-    static constexpr uint32_t initial_queue_capacity = 64 * 1024 * 1024; // 64MiB
-    static constexpr uint32_t blocking_queue_retry_interval_ns = 800;
-    static constexpr bool huge_pages_enabled = false;
+    static constexpr quill::QueueType queue_type{ quill::QueueType::BoundedDropping };
+    static constexpr uint32_t initial_queue_capacity{ 64 * 1024 * 1024 }; // 64MiB
+    static constexpr uint32_t blocking_queue_retry_interval_ns{ 800 };
+    static constexpr bool huge_pages_enabled{ false };
 };
 using CustomFrontend = quill::FrontendImpl<CustomFrontendOptions>;
 using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
@@ -100,20 +100,20 @@ EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
 
 struct HDR_META 
 {
-    bool exists = false;
-    int r_primary_x = 0;
-    int r_primary_y = 0;
-    int g_primary_x = 0;
-    int g_primary_y = 0;
-    int b_primary_x = 0;
-    int b_primary_y = 0;
-    int whitepoint_x = 0;
-    int whitepoint_y = 0;
-    int minDML = 0;
-    int maxDML = 0;
-    int maxCLL = 0;
-    int maxFALL = 0;
-    int transferFunction = 4;
+    bool exists{ false };
+    int r_primary_x{ 0 };
+    int r_primary_y{ 0 };
+    int g_primary_x{ 0 };
+    int g_primary_y{ 0 };
+    int b_primary_x{ 0 };
+    int b_primary_y{ 0 };
+    int whitepoint_x{ 0 };
+    int whitepoint_y{ 0 };
+    int minDML{ 0 };
+    int maxDML{ 0 };
+    int maxCLL{ 0 };
+    int maxFALL{ 0 };
+    int transferFunction{ 4 };
 };
 
 struct VIDEO_SIGNAL
@@ -129,17 +129,17 @@ struct VIDEO_SIGNAL
 
 struct VIDEO_FORMAT
 {
-    MWCAP_VIDEO_COLOR_FORMAT colourFormat = MWCAP_VIDEO_COLOR_FORMAT_YUV709;
-    HDMI_PXIEL_ENCODING pixelEncoding = HDMI_ENCODING_YUV_420;
-    byte bitDepth = 10;
-    int cx = 3840;
-    int cy = 2160;
-    DWORD fps = 50;
-    LONGLONG frameInterval = 200000;
-    int aspectX = 16;
-    int aspectY = 9;
-    MWCAP_VIDEO_QUANTIZATION_RANGE quantization = MWCAP_VIDEO_QUANTIZATION_LIMITED;
-    MWCAP_VIDEO_SATURATION_RANGE saturation = MWCAP_VIDEO_SATURATION_LIMITED;
+    MWCAP_VIDEO_COLOR_FORMAT colourFormat{ MWCAP_VIDEO_COLOR_FORMAT_YUV709 };
+    HDMI_PXIEL_ENCODING pixelEncoding{ HDMI_ENCODING_YUV_420 };
+    byte bitDepth{ 10 };
+    int cx{ 3840 };
+    int cy{ 2160 };
+    DWORD fps{ 50 };
+    LONGLONG frameInterval{ 200000 };
+    int aspectX{ 16 };
+    int aspectY{ 9 };
+    MWCAP_VIDEO_QUANTIZATION_RANGE quantization{ MWCAP_VIDEO_QUANTIZATION_LIMITED };
+    MWCAP_VIDEO_SATURATION_RANGE saturation{ MWCAP_VIDEO_SATURATION_LIMITED };
     HDR_META hdrMeta;
     // derived from the above attributes
     byte bitCount;
@@ -159,20 +159,20 @@ struct AUDIO_SIGNAL
 
 struct AUDIO_FORMAT
 {
-    boolean pcm = true;
-    DWORD fs = 48000;
-    double sampleInterval = 10000000.0 / 48000;
-    BYTE bitDepth = 16;
-    BYTE bitDepthInBytes = 2;
-    BYTE channelAllocation = 0x00;
-    WORD channelValidityMask = 0;
-    WORD inputChannelCount = 2;
-    WORD outputChannelCount = 2;
-    std::array<int, 8> channelOffsets { not_present, not_present, not_present, not_present, not_present, not_present, not_present, not_present };
-    WORD channelMask = KSAUDIO_SPEAKER_STEREO;
-    int lfeChannelIndex = not_present;
-    double lfeLevelAdjustment = 1.0;
-    Codec codec = PCM;
+    boolean pcm{ true };
+    DWORD fs{ 48000 };
+    double sampleInterval{ 10000000.0 / 48000 };
+    BYTE bitDepth{ 16 };
+    BYTE bitDepthInBytes{ 2 };
+    BYTE channelAllocation{ 0x00 };
+    WORD channelValidityMask{ 0 };
+    WORD inputChannelCount{ 2 };
+    WORD outputChannelCount{ 2 };
+    std::array<int, 8> channelOffsets{ not_present, not_present, not_present, not_present, not_present, not_present, not_present, not_present };
+    WORD channelMask{ KSAUDIO_SPEAKER_STEREO };
+    int lfeChannelIndex{ not_present };
+    double lfeLevelAdjustment{ 1.0 };
+    Codec codec{ PCM };
 };
 
 class MWReferenceClock final :
@@ -255,10 +255,10 @@ private:
     MWReferenceClock* mClock;
 
     int mValidChannel[32] = { -1 };
-    int mValidChannelCount = 0;
+    int mValidChannelCount{ 0 };
 
-    int mBoardId = -1;
-    int mChannelId = -1;
+    int mBoardId{ -1 };
+    int mChannelId{ -1 };
 
 #ifndef NO_QUILL
     std::string mLogPrefix = "MagewellCaptureFilter";
@@ -347,7 +347,7 @@ protected:
     LONGLONG mFrameCounter;
     bool mPreview;
     MagewellCaptureFilter* mFilter;
-    WORD mSinceLastLog;
+    WORD mSinceLast;
     LONGLONG mStreamStartTime;
 
     // Common - temp 
@@ -386,9 +386,9 @@ public:
     HRESULT OnThreadCreate(void) override;
 
 protected:
-    VIDEO_SIGNAL mVideoSignal = {};
-    VIDEO_FORMAT mVideoFormat = {};
-    boolean mHasHdrInfoFrame;
+    VIDEO_SIGNAL mVideoSignal{};
+    VIDEO_FORMAT mVideoFormat{};
+    boolean mHasHdrInfoFrame{ false };
 
     // Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
     class VideoFrameGrabber
@@ -431,8 +431,8 @@ public:
     MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent);
 
     void CopyToBitstreamBuffer(BYTE* pBuf);
-    HRESULT ProbeBitstreamBuffer(uint16_t bufSize, enum Codec** codec);
-    static HRESULT GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, int* burstSize, enum Codec* codec);
+    HRESULT ParseBitstreamBuffer(uint16_t bufSize, enum Codec** codec);
+    static HRESULT GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, uint16_t* burstSize, enum Codec* codec);
 
 	//////////////////////////////////////////////////////////////////////////
     //  CBaseOutputPin
@@ -455,15 +455,17 @@ public:
     HRESULT FillBuffer(IMediaSample* pms) override;
 
 protected:
-    double minus_10db = pow(10.0, -10.0 / 20.0);
-    AUDIO_SIGNAL mAudioSignal = {};
-    AUDIO_FORMAT mAudioFormat = {};
+    double minus_10db{ pow(10.0, -10.0 / 20.0) };
+    AUDIO_SIGNAL mAudioSignal{};
+    AUDIO_FORMAT mAudioFormat{};
     // IEC61937 fields
+    uint8_t mPaPbBytesRead;
     BYTE mPcPdBuffer[4]; 
-    int mPcPdBufferSize;
+    int mPcPdBytesRead;
+    uint16_t mDataBurstRead;
     uint16_t mDataBurstSize;
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
-    BYTE mDataBurstBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
+    std::vector<BYTE> mDataBurstBuffer; // variable size 
 
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
     void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
