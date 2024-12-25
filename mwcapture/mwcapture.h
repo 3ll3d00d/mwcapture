@@ -54,6 +54,7 @@ constexpr auto IEC61937_SYNCWORD_2 = 0x4E1F;
 enum IEC61937DataType : int
 {
     IEC61937_AC3                = 0x01,          ///< AC-3 data
+    IEC61937_PAUSE              = 0x03,          ///< Pause
     IEC61937_MPEG1_LAYER1       = 0x04,          ///< MPEG-1 layer 1
     IEC61937_MPEG1_LAYER23      = 0x05,          ///< MPEG-1 layer 2 or 3 data or MPEG-2 without extension
     IEC61937_MPEG2_EXT          = 0x06,          ///< MPEG-2 data with extension
@@ -88,14 +89,16 @@ static const std::string codecNames[7] = {
     "PCM",
     "AC3",
     "DTS",
+    "DTSHD",
     "EAC3",
     "TrueHD",
-    "Dolby MAT",
-	"Unidentified"
+    "Unidentified"
 };
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
 
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
+EXTERN_C const GUID MEDIASUBTYPE_PCM_RAW;
+EXTERN_C const GUID MEDIASUBTYPE_PCM_SOWT;
 EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
 
 struct HDR_META 
@@ -347,7 +350,7 @@ protected:
     LONGLONG mFrameCounter;
     bool mPreview;
     MagewellCaptureFilter* mFilter;
-    WORD mSinceLast;
+    WORD mSinceLast{0};
     LONGLONG mStreamStartTime;
 
     // Common - temp 
@@ -428,11 +431,12 @@ class MagewellAudioCapturePin final :
     public MagewellCapturePin
 {
 public:
-    MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent);
+    MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
+    ~MagewellAudioCapturePin();
 
     void CopyToBitstreamBuffer(BYTE* pBuf);
     HRESULT ParseBitstreamBuffer(uint16_t bufSize, enum Codec** codec);
-    static HRESULT GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, uint16_t* burstSize, enum Codec* codec);
+    HRESULT GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, uint16_t* burstSize, enum Codec* codec);
 
 	//////////////////////////////////////////////////////////////////////////
     //  CBaseOutputPin
@@ -459,13 +463,23 @@ protected:
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
     // IEC61937 fields
-    uint8_t mPaPbBytesRead;
+    uint32_t mBitstreamDetectionWindowLength{ 0 };
+    uint8_t mPaPbBytesRead{ 0 };
     BYTE mPcPdBuffer[4]; 
-    int mPcPdBytesRead;
-    uint16_t mDataBurstRead;
-    uint16_t mDataBurstSize;
+    uint8_t mPcPdBytesRead{ 0 };
+    uint16_t mDataBurstFrameCount{ 0 };
+    uint16_t mDataBurstRead{ 0 };
+    uint16_t mDataBurstSize{ 0 };
+    uint16_t mDataBurstPayloadSize{ 0 };
+    uint32_t mBytesSincePaPb{ 0 };
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
     std::vector<BYTE> mDataBurstBuffer; // variable size 
+    // TODO remove once data verified
+    char mEncodedFileName[MAX_PATH];
+    FILE* mEncodedFile;
+    // TODO remove after SDK bug is fixed
+    Codec mCompressedCodec;
+    bool mProbeOnTimer{ false };
 
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
     void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;

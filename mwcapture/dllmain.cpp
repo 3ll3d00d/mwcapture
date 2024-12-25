@@ -42,6 +42,13 @@ DEFINE_GUID(CLSID_MWCAPTURE_FILTER,
     0x4e3b0a92, 0x2476, 0x4016, 0x81, 0xf0, 0x20, 0x1f, 0x19, 0xf6, 0xfb, 0xae);
 #endif
 
+// LAV compatibility
+// 20776172-0000-0010-8000-00AA00389B71
+DEFINE_GUID(MEDIASUBTYPE_PCM_RAW, 0x20776172, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71);
+// 74776f73-0000-0010-8000-00AA00389B71
+DEFINE_GUID(MEDIASUBTYPE_PCM_SOWT, 0x74776f73, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71);
+
+
 STDAPI AMovieSetupRegisterServer(CLSID clsServer, LPCWSTR szDescription, LPCWSTR szFileName, LPCWSTR szThreadingModel = L"Both", LPCWSTR szServerType = L"InprocServer32");
 
 STDAPI AMovieSetupUnregisterServer(CLSID clsServer);
