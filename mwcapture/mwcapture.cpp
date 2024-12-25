@@ -47,7 +47,7 @@
 #define SHORT_BACKOFF Sleep(1)
 
 constexpr auto bitstreamDetectionWindowSecs = 0.05;
-constexpr auto bitstreamDetectionRetryAfter = 2.5 / bitstreamDetectionWindowSecs;
+constexpr auto bitstreamDetectionRetryAfter = 1.0 / bitstreamDetectionWindowSecs;
 constexpr auto bitstreamBufferSize = 6144;
 constexpr auto unity = 1.0;
 constexpr auto chromaticity_scale_factor = 0.00002;
@@ -1640,14 +1640,14 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 		mAudioFormat.bitDepth, mAudioFormat.outputChannelCount, codecNames[mAudioFormat.codec]);
 	#endif
 
-	#ifdef _DEBUG
+	#ifdef RECORD_ENCODED
 	time_t timeNow = time(nullptr);
 	struct tm* tmLocal;
 	tmLocal = localtime(&timeNow);
 
 	strcpy_s(mEncodedFileName, std::filesystem::temp_directory_path().string().c_str());
 	CHAR fileName[128];
-	sprintf_s(fileName, "\\%s-%d-%02d-%02d-%02d-%02d-%02d",
+	sprintf_s(fileName, "\\%s-%d-%02d-%02d-%02d-%02d-%02d.enc",
 		pPreview ? "audio_prev" : "audio_cap", tmLocal->tm_year + 1900, tmLocal->tm_mon + 1, tmLocal->tm_mday, tmLocal->tm_hour, tmLocal->tm_min, tmLocal->tm_sec);
 	strcat_s(mEncodedFileName, fileName);
 
@@ -1662,7 +1662,7 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 
 MagewellAudioCapturePin::~MagewellAudioCapturePin()
 {
-	#ifdef _DEBUG
+	#ifdef RECORD_ENCODED
 	fclose(mEncodedFile);
 	#endif
 }
@@ -2903,18 +2903,19 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 	#ifndef NO_QUILL
 	if (bytesCaptured != sampleSize)
 	{
-		LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix,
-			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+		LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes (continuous? {})", mLogPrefix,
+			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize, mIsContinuous);
 	}
 	else
 	{
-		LOG_TRACE_L3(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes", mLogPrefix,
-			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize);
+		LOG_TRACE_L3(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes (continuous? {})", mLogPrefix,
+			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize, mIsContinuous);
 	}
 	#endif
 
 	pms->SetTime(&startTime, &endTime);
-	pms->SetSyncPoint(TRUE);
+	pms->SetSyncPoint(mAudioFormat.codec == PCM);
+	pms->SetDiscontinuity(!mIsContinuous);
 	if (mSendMediaType)
 	{
 		CMediaType cmt(m_mt);
@@ -3070,6 +3071,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_TRACE_L1(mLogger, "[{}] Stream is discarding", mLogPrefix);
 			#endif
 
+			mIsContinuous = false;
 			break;
 		}
 
@@ -3079,12 +3081,14 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_TRACE_L1(mLogger, "[{}] Stream has not started, sleeping", mLogPrefix);
 			#endif
 
+			mIsContinuous = false;
 			BACKOFF;
 			continue;
 		}
 
 		if (S_OK != LoadSignal(&h_channel))
 		{
+			mIsContinuous = false;
 			BACKOFF;
 			continue;
 		}
@@ -3099,6 +3103,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			#endif
 
 			mSinceLast = 0;
+			mIsContinuous = false;
 			BACKOFF;
 			continue;
 		}
@@ -3111,6 +3116,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			#endif
 
 			mSinceLast = 0;
+			mIsContinuous = false;
 			BACKOFF;
 			continue;
 		}
@@ -3122,6 +3128,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			#endif
 
 			mSinceLast = 0;
+			mIsContinuous = false;
 			BACKOFF;
 			continue;
 		}
@@ -3134,32 +3141,36 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				// TODO magewell SDK bug means audio is always reported as PCM, until fixed allow 6 frames of audio to pass through before declaring it definitely PCM
 				// 12 frames is 7680 bytes of 2 channel audio & 30720 of 8 channel which should be more than enough to be sure
 				mBitstreamDetectionWindowLength = std::round(bitstreamDetectionWindowSecs / (static_cast<double>(MWCAP_AUDIO_SAMPLES_PER_FRAME) / newAudioFormat.fs));
-				if (mCompressedCodec != PCM)
+				if (mDetectedCodec != PCM)
 				{
-					newAudioFormat.codec = mCompressedCodec;
+					newAudioFormat.codec = mDetectedCodec;
 				}
-				Codec* frameCodec = &newAudioFormat.codec;
+				Codec* detectedCodec = &newAudioFormat.codec;
 				auto mightBeBitstream = newAudioFormat.fs >= 48000 && mSinceLast < mBitstreamDetectionWindowLength;
 				auto examineBitstream = newAudioFormat.codec != PCM || mightBeBitstream || mDataBurstSize > 0;
 				if (examineBitstream)
 				{
 					CopyToBitstreamBuffer(reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples));
 					uint16_t bufferSize = mAudioFormat.bitDepthInBytes * MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.inputChannelCount;
-					if (S_OK != ParseBitstreamBuffer(bufferSize, &frameCodec))
+					if (S_OK != ParseBitstreamBuffer(bufferSize, &detectedCodec))
 					{
+						int probeTrigger = std::round(mBitstreamDetectionWindowLength * bitstreamDetectionRetryAfter);
 						if (++mSinceLast < mBitstreamDetectionWindowLength)
 						{
 							// skip to the next frame if we're in the initial probe otherwise allow publication downstream to continue
 							if (!mProbeOnTimer) continue;
 						}
-						else
+						else 
 						{
 							#ifndef NO_QUILL
-							LOG_TRACE_L1(mLogger, "[{}] Probe complete after {} frames, not bitstream (timer? {})", mLogPrefix, mSinceLast, mProbeOnTimer);
+							if (mSinceLast == mBitstreamDetectionWindowLength)
+							{
+								LOG_TRACE_L1(mLogger, "[{}] Probe complete after {} frames, not bitstream (timer? {})", mLogPrefix, mSinceLast, mProbeOnTimer);
+							}
 							#endif
 							mProbeOnTimer = false;
 						}
-						if (mSinceLast >= std::round(mBitstreamDetectionWindowLength * bitstreamDetectionRetryAfter))
+						if (mSinceLast >= probeTrigger)
 						{
 							#ifndef NO_QUILL
 							LOG_TRACE_L1(mLogger, "[{}] Triggering bitstream probe after {} frames", mLogPrefix, mSinceLast);
@@ -3173,7 +3184,14 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					else
 					{
 						mProbeOnTimer = false;
-						mCompressedCodec = *frameCodec;
+						if (mDetectedCodec == *detectedCodec)
+						{
+							mSinceCodecChange++;
+						}
+						else
+						{
+							mDetectedCodec = *detectedCodec;
+						}
 						mSinceLast = 0;
 						if (mDataBurstPayloadSize > 0)
 						{
@@ -3189,6 +3207,14 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 						}
 					}
 				}
+
+				// don't try to publish PAUSE downstream
+				if (mDetectedCodec == PAUSE)
+				{
+					mIsContinuous = false;
+					continue;
+				}
+
 				// detect format changes
 				if (ShouldChangeMediaType(&newAudioFormat))
 				{
@@ -3216,10 +3242,12 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
 					if (SUCCEEDED(retVal))
 					{
+						mIsContinuous = true;
 						hasFrame = true;
 					}
 					else
 					{
+						mIsContinuous = false;
 						#ifndef NO_QUILL
 						LOG_WARNING(mLogger, "[{}] Audio frame buffered but unable to get delivery buffer, sleeping", mLogPrefix);
 						#endif
@@ -3228,6 +3256,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
+				mIsContinuous = false;
 				#ifndef NO_QUILL
 				LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed, sleeping", mLogPrefix);
 				#endif
@@ -3266,7 +3295,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 	bool copiedBytes = false;
 
 	#ifndef NO_QUILL
-	bool foundPause = false;
+	bool foundPause = **codec == PAUSE;
 	#endif
 
 	while (bytesRead < bufSize)  
@@ -3276,11 +3305,6 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 		{
 			uint16_t remainingInBuffer = bufSize - bytesRead;
 			auto toCopy = std::min(remainingInBurst, remainingInBuffer);
-
-			#ifndef NO_QUILL
-			LOG_TRACE_L3(mLogger, "[{}] Copying {} of {} data burst bytes to the final buffer", mLogPrefix, toCopy, mDataBurstSize);
-			#endif
-
 			for (auto i = 0; i < toCopy; i++)
 			{
 				mDataBurstBuffer[mDataBurstRead + i] = mCompressedBuffer[bytesRead + i];
@@ -3294,7 +3318,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			if (remainingInBurst == 0)
 			{
 				mDataBurstPayloadSize = mDataBurstSize;
-				#ifdef _DEBUG
+				#ifdef RECORD_ENCODED
 				fwrite(mDataBurstBuffer.data(), mDataBurstSize, 1, mEncodedFile);
 				#endif
 			}
@@ -3319,12 +3343,11 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 				{
 					mDataBurstRead = 0;
 					bytesRead++;
-					mBytesSincePaPb -= 3;
 					#ifndef NO_QUILL
 					if (!foundPause)
 						LOG_TRACE_L3(mLogger, "[{}] Found PaPb at position {}-{} ({} since last)", mLogPrefix, bytesRead - 4, bytesRead, mBytesSincePaPb);
 					#endif
-					mBytesSincePaPb = 0;
+					mBytesSincePaPb = 4;
 					break;
 				}
 			}
@@ -3365,22 +3388,20 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			#endif
 			continue;
 		}
-		else
-		{
-			#ifndef NO_QUILL
-			if (!foundPause)
-				LOG_TRACE_L3(mLogger, "[{}] Found PcPd at position {}", mLogPrefix, bytesRead - bytesToCopy);
-			#endif
-		}
 		// number is commonly in bits so / 8 to convert to bytes
 		mDataBurstSize = ((static_cast<uint16_t>(mPcPdBuffer[2]) << 8) + static_cast<uint16_t>(mPcPdBuffer[3])) / 8;
-		if (S_FALSE == GetCodecFromIEC61937Preamble(IEC61937DataType{ mPcPdBuffer[1] & 0x7f }, &mDataBurstSize, *codec))
+		GetCodecFromIEC61937Preamble(IEC61937DataType{ mPcPdBuffer[1] & 0x7f }, &mDataBurstSize, *codec);
+
+		// ignore PAUSE, start search again
+		if (**codec == PAUSE)
 		{
-			// ignore PAUSE, start search again
-			mPaPbBytesRead = mPcPdBytesRead = 0;
+			mPaPbBytesRead = mPcPdBytesRead = mDataBurstSize = 0;
 			#ifndef NO_QUILL
-			foundPause = true;
-			LOG_TRACE_L3(mLogger, "[{}] Found PAUSE, start skipping", mLogPrefix);
+			if (!foundPause)
+			{
+				foundPause = true;
+				LOG_TRACE_L3(mLogger, "[{}] Found PAUSE, start skipping", mLogPrefix);
+			}
 			#endif
 			continue;
 		}
@@ -3433,7 +3454,8 @@ HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(enum IEC61937DataT
 		*codec = TRUEHD;
 		break;
 	case IEC61937_PAUSE:
-		return S_FALSE;
+		*codec = PAUSE;
+		break;
 	default:
 		#ifndef NO_QUILL
 		LOG_TRACE_L1(mLogger, "[{}] Unknown IEC61937 datatype {} will be treated as PCM", mLogPrefix, dataType & 0xff);

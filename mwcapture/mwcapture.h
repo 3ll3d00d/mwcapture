@@ -83,16 +83,18 @@ enum Codec
     DTSHD,
     EAC3,
     TRUEHD,
-    BITSTREAM
+    BITSTREAM,
+    PAUSE
 };
-static const std::string codecNames[7] = {
+static const std::string codecNames[8] = {
     "PCM",
     "AC3",
     "DTS",
     "DTSHD",
     "EAC3",
     "TrueHD",
-    "Unidentified"
+    "Unidentified",
+	"PAUSE"
 };
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
 
@@ -462,7 +464,8 @@ protected:
     double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
-    // IEC61937 fields
+    bool mIsContinuous{ false };
+    // IEC61937 processing
     uint32_t mBitstreamDetectionWindowLength{ 0 };
     uint8_t mPaPbBytesRead{ 0 };
     BYTE mPcPdBuffer[4]; 
@@ -472,13 +475,15 @@ protected:
     uint16_t mDataBurstSize{ 0 };
     uint16_t mDataBurstPayloadSize{ 0 };
     uint32_t mBytesSincePaPb{ 0 };
+    uint64_t mSinceCodecChange{ 0 };
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
     std::vector<BYTE> mDataBurstBuffer; // variable size 
-    // TODO remove once data verified
+    #ifdef RECORD_ENCODED
     char mEncodedFileName[MAX_PATH];
     FILE* mEncodedFile;
+	#endif
     // TODO remove after SDK bug is fixed
-    Codec mCompressedCodec;
+    Codec mDetectedCodec{ PCM };
     bool mProbeOnTimer{ false };
 
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
