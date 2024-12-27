@@ -51,8 +51,9 @@ constexpr auto IEC61937_SYNCWORD_1 = 0xF872;
 // IEC 61937-1 Chapter 6.1.7 Field Pb
 constexpr auto IEC61937_SYNCWORD_2 = 0x4E1F;
 // IEC 61937-2 Table 2
-enum IEC61937DataType : int
+enum IEC61937DataType : uint8_t
 {
+    IEC61937_NULL               = 0x0,           ///< NULL
     IEC61937_AC3                = 0x01,          ///< AC-3 data
     IEC61937_PAUSE              = 0x03,          ///< Pause
     IEC61937_MPEG1_LAYER1       = 0x04,          ///< MPEG-1 layer 1
@@ -84,7 +85,7 @@ enum Codec
     EAC3,
     TRUEHD,
     BITSTREAM,
-    PAUSE
+    PAUSE_OR_NULL
 };
 static const std::string codecNames[8] = {
     "PCM",
@@ -94,7 +95,7 @@ static const std::string codecNames[8] = {
     "EAC3",
     "TrueHD",
     "Unidentified",
-	"PAUSE"
+	"PAUSE_OR_NULL"
 };
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
 
@@ -178,6 +179,8 @@ struct AUDIO_FORMAT
     int lfeChannelIndex{ not_present };
     double lfeLevelAdjustment{ 1.0 };
     Codec codec{ PCM };
+    // encoded content only
+    uint16_t dataBurstSize{ 0 };
 };
 
 class MWReferenceClock final :
@@ -341,7 +344,7 @@ public:
 protected:
     virtual void StopCapture() = 0;
     virtual bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) = 0;
-    HRESULT RenegotiateMediaType(const CMediaType* pmt, int oldSize, int newSize);
+    HRESULT RenegotiateMediaType(const CMediaType* pmt, long newSize, boolean renegotiateOnQueryAccept);
     HRESULT HandleStreamStateChange(IMediaSample* pms);
 
 #ifndef NO_QUILL
@@ -464,7 +467,6 @@ protected:
     double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
-    bool mIsContinuous{ false };
     // IEC61937 processing
     uint32_t mBitstreamDetectionWindowLength{ 0 };
     uint8_t mPaPbBytesRead{ 0 };
