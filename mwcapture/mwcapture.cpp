@@ -460,6 +460,98 @@ STDMETHODIMP MagewellCapturePin::NonDelegatingQueryInterface(REFIID riid, void**
 	return CSourceStream::NonDelegatingQueryInterface(riid, ppv);
 }
 
+// copy of CSourceStream btu with logging replaced
+HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
+	#ifndef NO_QUILL
+	LOG_INFO(mLogger, "[{}] Entering DoBufferProcessingLoop", mLogPrefix);
+	#endif
+
+	Command com;
+
+	OnThreadStartPlay();
+
+	do {
+		while (!CheckRequest(&com)) {
+
+			IMediaSample* pSample;
+
+			HRESULT hr = GetDeliveryBuffer(&pSample, nullptr, nullptr, 0);
+			if (FAILED(hr)) 
+			{
+				SHORT_BACKOFF;
+				continue;	
+			}
+
+			hr = FillBuffer(pSample);
+
+			if (hr == S_OK) 
+			{
+				hr = Deliver(pSample);
+				pSample->Release();
+
+				if (hr != S_OK)
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Failed to deliver sample downstream ({}), process loop will exit", mLogPrefix, hr);
+					#endif
+
+					return S_OK;
+				}
+
+			}
+			else if (hr == S_FALSE) 
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] Buffer not filled, retrying", mLogPrefix);
+				#endif
+
+				pSample->Release();
+			}
+			else 
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] FillBuffer failed ({}), sending EOS and EC_ERRORABORT", mLogPrefix, hr);
+				#endif
+
+				pSample->Release();
+				DeliverEndOfStream();
+				m_pFilter->NotifyEvent(EC_ERRORABORT, hr, 0);
+				return hr;
+			}
+
+			// all paths release the sample
+		}
+
+		// For all commands sent to us there must be a Reply call!
+
+		if (com == CMD_RUN || com == CMD_PAUSE) 
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] DoBufferProcessingLoop Replying to CMD {}", mLogPrefix, static_cast<int>(com));
+			#endif
+			Reply(NOERROR);
+		}
+		else if (com != CMD_STOP) 
+		{
+			#ifndef NO_QUILL
+			LOG_ERROR(mLogger, "[{}] DoBufferProcessingLoop Replying to UNEXPECTED CMD {}", mLogPrefix, static_cast<int>(com));
+			#endif
+			Reply(static_cast<DWORD>(E_UNEXPECTED));
+		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] DoBufferProcessingLoop IGNORED CMD_STOP", mLogPrefix);
+			#endif
+		}
+	} while (com != CMD_STOP);
+
+	#ifndef NO_QUILL
+	LOG_INFO(mLogger, "[{}] Exiting DoBufferProcessingLoop", mLogPrefix);
+	#endif
+	return S_FALSE;
+}
+
 HRESULT MagewellCapturePin::OnThreadDestroy()
 {
 	#ifndef NO_QUILL
@@ -879,24 +971,19 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 		}
 
 		// grab next frame and render it
-		HANDLE aEventNotify[2] = { pin->mCaptureEvent, pin->mNotifyEvent };
-		DWORD dwRet = WaitForMultipleObjects(2, aEventNotify, FALSE, 1000);
-
-		// must be stopping
-		if (dwRet == WAIT_OBJECT_0)
-		{
-			retVal = S_FALSE;
-			break;
-		}
+		DWORD dwRet = WaitForSingleObject(pin->mNotifyEvent, 1000);
 
 		// unknown, try again
 		if (dwRet == WAIT_FAILED)
 		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(pin->mLogger, "[{}] Wait for frame failed, retrying", pin->mLogPrefix);
+			#endif
 			continue;
 		}
 
 		// new frame, spin til it's consumed
-		if (dwRet == WAIT_OBJECT_0 + 1)
+		if (dwRet == WAIT_OBJECT_0)
 		{
 			pin->mLastMwResult = MWGetNotifyStatus(channel, pin->mNotify, &pin->mStatusBits);
 			if (pin->mLastMwResult != MW_SUCCEEDED) continue;
@@ -2924,7 +3011,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 
 	pms->SetTime(&startTime, &endTime);
 	pms->SetSyncPoint(mAudioFormat.codec == PCM);
-	pms->SetDiscontinuity(mSinceCodecChange == 0 && mAudioFormat.codec != PCM);
+	pms->SetDiscontinuity(mSinceCodecChange < 2 && mAudioFormat.codec != PCM);
 	if (mSendMediaType)
 	{
 		CMediaType cmt(m_mt);
@@ -3272,10 +3359,12 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
-				mSinceCodecChange = 0;
+				// TODO remove or reinstate? needs tests to see if we really need to reset here
+				// mSinceCodecChange = 0;
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), sleeping", mLogPrefix, static_cast<int>(mLastMwResult));
+				LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), retrying", mLogPrefix, static_cast<int>(mLastMwResult));
 				#endif
+				continue;
 			}
 			if (!hasFrame) SHORT_BACKOFF;
 		}

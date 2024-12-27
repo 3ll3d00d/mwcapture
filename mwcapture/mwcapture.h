@@ -313,6 +313,7 @@ public:
     HRESULT SetMediaType(const CMediaType* pmt) override;
     HRESULT OnThreadDestroy(void) override;
     HRESULT OnThreadStartPlay(void) override;
+    HRESULT DoBufferProcessingLoop(void) override;
 
     //////////////////////////////////////////////////////////////////////////
     //  CBaseStreamControl
