@@ -32,7 +32,8 @@ struct CustomFrontendOptions
 };
 using CustomFrontend = quill::FrontendImpl<CustomFrontendOptions>;
 using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
-
+#else
+#include <vector>
 #endif // !NO_QUILL
 
 #include <string>

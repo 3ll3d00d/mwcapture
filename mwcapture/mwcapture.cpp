@@ -14,6 +14,8 @@
  */
 #pragma once
 
+#define NOMINMAX
+
 #ifndef NO_QUILL
 #include "quill/Backend.h"
 #include "quill/Frontend.h"
@@ -3361,9 +3363,20 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			{
 				// TODO remove or reinstate? needs tests to see if we really need to reset here
 				// mSinceCodecChange = 0;
-				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), retrying", mLogPrefix, static_cast<int>(mLastMwResult));
-				#endif
+				if (mDataBurstSize > 0)
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), discarding current sample after {} bytes", mLogPrefix, 
+						static_cast<int>(mLastMwResult), mDataBurstRead);
+					#endif
+					mDataBurstSize = mDataBurstRead = 0;
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), retrying", mLogPrefix, static_cast<int>(mLastMwResult));
+					#endif
+				}
 				continue;
 			}
 			if (!hasFrame) SHORT_BACKOFF;
