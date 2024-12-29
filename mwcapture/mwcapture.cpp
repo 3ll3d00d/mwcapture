@@ -477,14 +477,14 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 
 			IMediaSample* pSample;
 
-			HRESULT hr = GetDeliveryBuffer(&pSample, nullptr, nullptr, 0);
-			if (FAILED(hr)) 
+			HRESULT hrBuf = GetDeliveryBuffer(&pSample, nullptr, nullptr, 0);
+			if (FAILED(hrBuf) || hrBuf == S_FALSE) 
 			{
 				SHORT_BACKOFF;
 				continue;	
 			}
 
-			hr = FillBuffer(pSample);
+			HRESULT hr = FillBuffer(pSample);
 
 			if (hr == S_OK) 
 			{
@@ -506,7 +506,6 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 				#ifndef NO_QUILL
 				LOG_WARNING(mLogger, "[{}] Buffer not filled, retrying", mLogPrefix);
 				#endif
-
 				pSample->Release();
 			}
 			else 
@@ -1219,34 +1218,35 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 	{
 		videoFormat->colourFormatName = "YUV2020";
 	}
+	else if (videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_RGB)
+	{
+		videoFormat->colourFormatName = "RGB";
+	}
 	else
 	{
 		videoFormat->colourFormatName = "UNK";
 	}
 	if (videoFormat->pixelEncoding == HDMI_ENCODING_RGB_444)
 	{
-		videoFormat->pixelStructure = MWFOURCC_RGB24;
-		videoFormat->pixelStructureName = "RGB24";
-		videoFormat->bitCount = 24;
+		videoFormat->pixelStructure = videoFormat -> bitDepth == 10 ? MWFOURCC_BGR10 : MWFOURCC_BGR24;
+		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "BGR10" : "BGR24";
 	}
 	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_420)
 	{
 		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_P010 : MWFOURCC_NV12;
 		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "P010" : "NV12";
-		videoFormat->bitCount = videoFormat->bitDepth == 10 ? 24 : 12;
 	}
 	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_422)
 	{
 		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_P210 : MWFOURCC_NV16;
 		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "P210" : "NV16";
-		videoFormat->bitCount = videoFormat->bitDepth == 10 ? 32 : 16;
 	}
 	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_444)
 	{
 		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_Y410 : MWFOURCC_V308;
 		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "Y410" : "V308";
-		videoFormat->bitCount = videoFormat->bitDepth == 10 ? 32 : 24;
 	}
+	videoFormat->bitCount = FOURCC_GetBpp(videoFormat->pixelStructure);
 	videoFormat->lineLength = FOURCC_CalcMinStride(videoFormat->pixelStructure, videoFormat->cx, 2);
 	videoFormat->imageSize = FOURCC_CalcImageSize(videoFormat->pixelStructure, videoFormat->cx, videoFormat->cy,
 		videoFormat->lineLength);
@@ -1352,13 +1352,13 @@ void MagewellVideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORM
 
 	auto colorimetry = reinterpret_cast<DXVA_ExtendedFormat*>(&(pvi->dwControlFlags));
 	// 1 = REC.709, 4 = BT.2020
-	colorimetry->VideoTransferMatrix = videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV709
-		? DXVA_VideoTransferMatrix_BT709
-		: static_cast<DXVA_VideoTransferMatrix>(4);
+	colorimetry->VideoTransferMatrix = videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV2020
+		? static_cast<DXVA_VideoTransferMatrix>(4)
+		: DXVA_VideoTransferMatrix_BT709;
 	// 1 = REC.709, 9 = BT.2020
-	colorimetry->VideoPrimaries = videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV709
-		? DXVA_VideoPrimaries_BT709
-		: static_cast<DXVA_VideoPrimaries>(9);
+	colorimetry->VideoPrimaries = videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV2020
+		? static_cast<DXVA_VideoPrimaries>(9)
+		: DXVA_VideoPrimaries_BT709;
 	// 4 = REC.709, 15 = SMPTE ST 2084 (PQ)
 	colorimetry->VideoTransferFunction = static_cast<DXVA_VideoTransferFunction>(videoFormat->hdrMeta.transferFunction);
 	// 0 = unknown, 1 = 0-255, 2 = 16-235
@@ -1374,12 +1374,13 @@ void MagewellVideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORM
 	pvi->dwControlFlags += AMCONTROL_USED;
 	pvi->dwControlFlags += AMCONTROL_COLORINFO_PRESENT;
 
+	auto isRgb = FOURCC_IsRGB(videoFormat->pixelStructure);
 	pvi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	pvi->bmiHeader.biWidth = videoFormat->cx;
-	pvi->bmiHeader.biHeight = videoFormat->cy;
+	pvi->bmiHeader.biHeight = isRgb ? -(videoFormat->cy) : videoFormat->cy; // RGB on windows is upside down
 	pvi->bmiHeader.biPlanes = 1;
 	pvi->bmiHeader.biBitCount = videoFormat->bitCount;
-	pvi->bmiHeader.biCompression = videoFormat->pixelStructure;
+	pvi->bmiHeader.biCompression = FOURCC_IsRGB(videoFormat->pixelStructure) ? BI_RGB : videoFormat->pixelStructure;
 	pvi->bmiHeader.biSizeImage = videoFormat->imageSize;
 	pvi->bmiHeader.biXPelsPerMeter = 0;
 	pvi->bmiHeader.biYPelsPerMeter = 0;
@@ -2730,7 +2731,7 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 			pmt->subtype = MEDIASUBTYPE_DOLBY_AC3;
 			wf->Format.nChannels = 2;						// 1 IEC 60958 Line.
 			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;    
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
+			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL;
 			wf_iec61937.dwEncodedChannelCount = 6;          
 			wf->Format.nSamplesPerSec = 48000;
 			break;
@@ -2768,6 +2769,7 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 			break;
 		case BITSTREAM:
 		case PCM:
+		case PAUSE_OR_NULL:
 			// should never get here
 			break;
 		}
@@ -3361,15 +3363,13 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
-				// TODO remove or reinstate? needs tests to see if we really need to reset here
-				// mSinceCodecChange = 0;
+				// NB: evidence suggests this is harmless but logging for clarity
 				if (mDataBurstSize > 0)
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), discarding current sample after {} bytes", mLogPrefix, 
+					LOG_WARNING(mLogger, "[{}] Audio frame buffered but capture failed ({}), possible packet corruption after {} bytes", mLogPrefix, 
 						static_cast<int>(mLastMwResult), mDataBurstRead);
 					#endif
-					mDataBurstSize = mDataBurstRead = 0;
 				}
 				else
 				{
@@ -3424,10 +3424,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 		{
 			uint16_t remainingInBuffer = bufSize - bytesRead;
 			auto toCopy = std::min(remainingInBurst, remainingInBuffer);
-			for (auto i = 0; i < toCopy; i++)
-			{
-				mDataBurstBuffer[mDataBurstRead + i] = mCompressedBuffer[bytesRead + i];
-			}
+			for (auto i = 0; i < toCopy; i++) mDataBurstBuffer[mDataBurstRead + i] = mCompressedBuffer[bytesRead + i];
 			bytesRead += toCopy;
 			mDataBurstRead += toCopy;
 			remainingInBurst -= toCopy;

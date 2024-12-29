@@ -480,8 +480,10 @@ protected:
     uint16_t mDataBurstPayloadSize{ 0 };
     uint32_t mBytesSincePaPb{ 0 };
     uint64_t mSinceCodecChange{ 0 };
+    bool mPacketMayBeCorrupt{ false };
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
-    std::vector<BYTE> mDataBurstBuffer; // variable size 
+    std::vector<BYTE> mDataBurstBuffer; // variable size
+
     #ifdef RECORD_ENCODED
     char mEncodedFileName[MAX_PATH];
     FILE* mEncodedFile;
