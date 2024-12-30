@@ -462,7 +462,8 @@ STDMETHODIMP MagewellCapturePin::NonDelegatingQueryInterface(REFIID riid, void**
 	return CSourceStream::NonDelegatingQueryInterface(riid, ppv);
 }
 
-// copy of CSourceStream btu with logging replaced
+// largely a copy of CSourceStream but with logging replaced (as DbgLog to file seems to never ever work)
+// and with better error handling to avoid visible freezes with no option but to restart
 HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 	#ifndef NO_QUILL
 	LOG_INFO(mLogger, "[{}] Entering DoBufferProcessingLoop", mLogPrefix);
@@ -478,8 +479,11 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 			IMediaSample* pSample;
 
 			HRESULT hrBuf = GetDeliveryBuffer(&pSample, nullptr, nullptr, 0);
-			if (FAILED(hrBuf) || hrBuf == S_FALSE) 
+			if (FAILED(hrBuf) || hrBuf == S_FALSE)
 			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] Failed to GetDeliveryBuffer ({}), retrying", mLogPrefix, hrBuf);
+				#endif
 				SHORT_BACKOFF;
 				continue;	
 			}
