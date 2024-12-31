@@ -922,7 +922,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 		if (pin->mStreamStartTime == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(pin->mLogger, "[{}] Stream has not started, sleeping", pin->mLogPrefix);
+			LOG_TRACE_L1(pin->mLogger, "[{}] Stream has not started, retry after backoff", pin->mLogPrefix);
 			#endif
 
 			BACKOFF;
@@ -932,7 +932,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 		if (FAILED(hr))
 		{
 			#ifndef NO_QUILL
-			LOG_WARNING(pin->mLogger, "[{}] Can't load signal, sleeping", pin->mLogPrefix);
+			LOG_WARNING(pin->mLogger, "[{}] Can't load signal, retry after backoff", pin->mLogPrefix);
 			#endif
 
 			BACKOFF;
@@ -941,7 +941,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 		if (pin->mVideoSignal.signalStatus.state != MWCAP_VIDEO_SIGNAL_LOCKED)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L2(pin->mLogger, "[{}] No signal {}, sleeping", pin->mLogPrefix,
+			LOG_TRACE_L2(pin->mLogger, "[{}] No signal {}, retry after backoff", pin->mLogPrefix,
 				static_cast<int>(pin->mVideoSignal.signalStatus.state));
 			#endif
 
@@ -965,7 +965,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 			if (FAILED(hr))
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(pin->mLogger, "[{}] VideoFormat changed but not able to reconnect! Sleeping [Result: {}]",
+				LOG_WARNING(pin->mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {}]",
 					pin->mLogPrefix, hr);
 				#endif
 
@@ -996,7 +996,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 			if (pin->mStatusBits & MWCAP_NOTIFY_VIDEO_SIGNAL_CHANGE)
 			{
 				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Video signal change, sleeping", pin->mLogPrefix);
+				LOG_TRACE_L1(pin->mLogger, "[{}] Video signal change, retry after backoff", pin->mLogPrefix);
 				#endif
 
 				BACKOFF;
@@ -1005,7 +1005,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab()
 			if (pin->mStatusBits & MWCAP_NOTIFY_VIDEO_INPUT_SOURCE_CHANGE)
 			{
 				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Video input source change, sleeping", pin->mLogPrefix);
+				LOG_TRACE_L1(pin->mLogger, "[{}] Video input source change, retry after backoff", pin->mLogPrefix);
 				#endif
 
 				BACKOFF;
@@ -2813,6 +2813,10 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 	else
 	{
 		mAudioSignal.audioInfo = {};
+		#ifndef NO_QUILL
+		LOG_WARNING(mLogger, "[{}] No HDMI Audio infoframe detected", mLogPrefix);
+		#endif
+		return S_FALSE;
 	}
 	if (mAudioSignal.signalStatus.wChannelValid == 0)
 	{
@@ -3187,7 +3191,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (mStreamStartTime == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] Stream has not started, sleeping", mLogPrefix);
+			LOG_TRACE_L1(mLogger, "[{}] Stream has not started, retry after backoff", mLogPrefix);
 			#endif
 
 			mSinceCodecChange = 0;
@@ -3197,6 +3201,10 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 
 		if (S_OK != LoadSignal(&h_channel))
 		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogger, "[{}] Unable to load signal, retry after backoff", mLogPrefix);
+			#endif
+
 			mSinceCodecChange = 0;
 			BACKOFF;
 			continue;
@@ -3208,7 +3216,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (newAudioFormat.outputChannelCount == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L2(mLogger, "[{}] No signal, sleeping", mLogPrefix);
+			LOG_TRACE_L2(mLogger, "[{}] No output channels in signal, retry after backoff", mLogPrefix);
 			#endif
 
 			mSinceLast = 0;
@@ -3221,7 +3229,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (mStatusBits & MWCAP_NOTIFY_AUDIO_SIGNAL_CHANGE)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] Audio signal change, sleeping", mLogPrefix);
+			LOG_TRACE_L1(mLogger, "[{}] Audio signal change, retry after backoff", mLogPrefix);
 			#endif
 
 			mSinceLast = 0;
@@ -3233,7 +3241,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (mStatusBits & MWCAP_NOTIFY_AUDIO_INPUT_SOURCE_CHANGE)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] Audio input source change, sleeping", mLogPrefix);
+			LOG_TRACE_L1(mLogger, "[{}] Audio input source change, retry after backoff", mLogPrefix);
 			#endif
 
 			mSinceLast = 0;
@@ -3340,7 +3348,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					if (FAILED(hr))
 					{
 						#ifndef NO_QUILL
-						LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) sleeping", mLogPrefix, hr);
+						LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) retry after backoff", mLogPrefix, hr);
 						#endif
 
 						// TODO communicate that we need to change somehow
@@ -3360,7 +3368,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					{
 						mSinceCodecChange = 0;
 						#ifndef NO_QUILL
-						LOG_WARNING(mLogger, "[{}] Audio frame buffered but unable to get delivery buffer, sleeping", mLogPrefix);
+						LOG_WARNING(mLogger, "[{}] Audio frame buffered but unable to get delivery buffer, retry after backoff", mLogPrefix);
 						#endif
 					}
 				}
@@ -3483,10 +3491,10 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			}
 		}
 
-		if (mPaPbBytesRead != 4)
+		if (mPaPbBytesRead == 1 || mPaPbBytesRead == 2 || mPaPbBytesRead == 3)
 		{
 			#ifndef NO_QUILL
-			if (mPaPbBytesRead > 0 && !foundPause)
+			if (!foundPause)
 			{
 				LOG_TRACE_L3(mLogger, "[{}] PaPb {} bytes found", mLogPrefix, mPaPbBytesRead);
 			}
@@ -3505,16 +3513,19 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			mBytesSincePaPb += bytesToCopy;
 		}
 
-		copiedBytes = true;
+		if (bytesToCopy)
+			copiedBytes = true;
 
 		if (mPcPdBytesRead != 4)
 		{
+			
 			#ifndef NO_QUILL
-			if (!foundPause)
+			if (!foundPause && mPcPdBytesRead != 0)
 				LOG_TRACE_L3(mLogger, "[{}] Found PcPd at position {} but only {} bytes available", mLogPrefix, bytesRead - bytesToCopy, bytesToCopy);
 			#endif
 			continue;
 		}
+
 		// number is commonly in bits so / 8 to convert to bytes
 		mDataBurstSize = ((static_cast<uint16_t>(mPcPdBuffer[2]) << 8) + static_cast<uint16_t>(mPcPdBuffer[3])) / 8;
 		auto dt = static_cast<uint8_t>(mPcPdBuffer[1] & 0x7f);
