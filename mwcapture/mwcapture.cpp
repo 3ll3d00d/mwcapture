@@ -48,6 +48,7 @@
 #define BACKOFF Sleep(20)
 #define SHORT_BACKOFF Sleep(1)
 #define S_PARTIAL_DATABURST    ((HRESULT)2L)
+#define S_NO_CHANNELS    ((HRESULT)2L)
 
 constexpr auto bitstreamDetectionWindowSecs = 0.05;
 constexpr auto bitstreamDetectionRetryAfter = 1.0 / bitstreamDetectionWindowSecs;
@@ -2695,8 +2696,19 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 
 	if (audioFormat->codec == PCM)
 	{
-		// LAVAudio compatible little endian PCM 
-		pmt->subtype = MEDIASUBTYPE_PCM_SOWT;
+		// LAVAudio compatible big endian PCM
+		if (audioFormat->bitDepthInBytes == 3)
+		{
+			pmt->subtype = MEDIASUBTYPE_PCM_IN24;
+		}
+		else if (audioFormat->bitDepthInBytes == 4)
+		{
+			pmt->subtype = MEDIASUBTYPE_PCM_IN32;
+		}
+		else
+		{
+			pmt->subtype = MEDIASUBTYPE_PCM_SOWT;
+		}
 
 		WAVEFORMATEXTENSIBLE wfex;
 		memset(&wfex, 0, sizeof(wfex));
@@ -2821,10 +2833,10 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 	if (mAudioSignal.signalStatus.wChannelValid == 0)
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] ERROR! No valid audio channels detected {}", mLogPrefix,
+		LOG_WARNING(mLogger, "[{}] ERROR! No valid audio channels detected {}", mLogPrefix,
 			mAudioSignal.signalStatus.wChannelValid);
 		#endif
-		return S_FALSE;
+		return S_NO_CHANNELS;
 	}
 	return S_OK;
 }
@@ -3199,7 +3211,8 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			continue;
 		}
 
-		if (S_OK != LoadSignal(&h_channel))
+		auto sigLoaded = LoadSignal(&h_channel);
+		if (S_OK != sigLoaded)
 		{
 			#ifndef NO_QUILL
 			LOG_TRACE_L1(mLogger, "[{}] Unable to load signal, retry after backoff", mLogPrefix);
@@ -3216,7 +3229,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (newAudioFormat.outputChannelCount == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L2(mLogger, "[{}] No output channels in signal, retry after backoff", mLogPrefix);
+			LOG_TRACE_L1(mLogger, "[{}] No output channels in signal, retry after backoff", mLogPrefix);
 			#endif
 
 			mSinceLast = 0;
@@ -3526,8 +3539,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			continue;
 		}
 
-		// number is commonly in bits so / 8 to convert to bytes
-		mDataBurstSize = ((static_cast<uint16_t>(mPcPdBuffer[2]) << 8) + static_cast<uint16_t>(mPcPdBuffer[3])) / 8;
+		mDataBurstSize = ((static_cast<uint16_t>(mPcPdBuffer[2]) << 8) + static_cast<uint16_t>(mPcPdBuffer[3]));
 		auto dt = static_cast<uint8_t>(mPcPdBuffer[1] & 0x7f);
 		GetCodecFromIEC61937Preamble(IEC61937DataType{ dt }, &mDataBurstSize, *codec);
 
@@ -3574,23 +3586,22 @@ HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(const IEC61937Data
 	switch (dataType & 0xff)
 	{
 	case IEC61937_AC3:
+		*burstSize /= 8; // bits
 		*codec = AC3;
 		break;
 	case IEC61937_DTS1:
 	case IEC61937_DTS2:
 	case IEC61937_DTS3:
+		*burstSize /= 8; // bits
 		*codec = DTS;
 		break;
 	case IEC61937_DTSHD:
-		*burstSize *= 8; // bytes
 		*codec = DTSHD;
 		break;
 	case IEC61937_EAC3:
 		*codec = EAC3;
-		*burstSize *= 8; // bytes
 		break;
 	case IEC61937_TRUEHD:
-		*burstSize *= 8; // bytes
 		*codec = TRUEHD;
 		break;
 	case IEC61937_NULL:
