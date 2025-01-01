@@ -2826,7 +2826,7 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 	{
 		mAudioSignal.audioInfo = {};
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] No HDMI Audio infoframe detected", mLogPrefix);
+		LOG_TRACE_L1(mLogger, "[{}] No HDMI Audio infoframe detected", mLogPrefix);
 		#endif
 		return S_FALSE;
 	}
