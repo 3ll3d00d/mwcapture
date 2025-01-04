@@ -485,9 +485,15 @@ protected:
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
     std::vector<BYTE> mDataBurstBuffer; // variable size
 
+    #ifdef RECORD_RAW
+    char mRawFileName[MAX_PATH];
+    FILE* mRawFile;
+    #endif
     #ifdef RECORD_ENCODED
-    char mEncodedFileName[MAX_PATH];
-    FILE* mEncodedFile;
+    char mEncodedInFileName[MAX_PATH];
+    FILE* mEncodedInFile;
+    char mEncodedOutFileName[MAX_PATH];
+    FILE* mEncodedOutFile;
 	#endif
     // TODO remove after SDK bug is fixed
     Codec mDetectedCodec{ PCM };
