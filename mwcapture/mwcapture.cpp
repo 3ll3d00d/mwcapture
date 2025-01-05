@@ -1729,6 +1729,12 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 		{
 			LoadFormat(&mAudioFormat, &mAudioSignal);
 		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_ERROR(mLogger, "[{}] ERROR! Unable to load audio signal", mLogPrefix);
+			#endif
+		}
 	}
 
 	#ifndef NO_QUILL
@@ -2883,6 +2889,15 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat)
 {
 	auto reconnect = false;
+	if (mAudioFormat.inputChannelCount != newAudioFormat->inputChannelCount)
+	{
+		reconnect = true;
+
+		#ifndef NO_QUILL
+		LOG_INFO(mLogger, "[{}] Input channel count change {} to {}", mLogPrefix, mAudioFormat.inputChannelCount,
+			newAudioFormat->inputChannelCount);
+		#endif
+	}
 	if (mAudioFormat.outputChannelCount != newAudioFormat->outputChannelCount)
 	{
 		reconnect = true;
@@ -3391,7 +3406,6 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					mProbeOnTimer = true;
 					mSinceLast = 0;
 					mBytesSincePaPb = 0;
-					continue;
 				}
 
 				// don't try to publish PAUSE_OR_NULL downstream

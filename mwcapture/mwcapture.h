@@ -176,7 +176,7 @@ struct AUDIO_FORMAT
     WORD channelValidityMask{ 0 };
     WORD inputChannelCount{ 2 };
     WORD outputChannelCount{ 2 };
-    std::array<int, 8> channelOffsets{ not_present, not_present, not_present, not_present, not_present, not_present, not_present, not_present };
+    std::array<int, 8> channelOffsets{ 0, 0, not_present, not_present, not_present, not_present, not_present, not_present };
     WORD channelMask{ KSAUDIO_SPEAKER_STEREO };
     int lfeChannelIndex{ not_present };
     double lfeLevelAdjustment{ 1.0 };
