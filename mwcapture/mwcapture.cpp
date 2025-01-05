@@ -2872,7 +2872,7 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 	if (mAudioSignal.signalStatus.wChannelValid == 0)
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] ERROR! No valid audio channels detected {}", mLogPrefix,
+		LOG_TRACE_L1(mLogger, "[{}] ERROR! No valid audio channels detected {}", mLogPrefix,
 			mAudioSignal.signalStatus.wChannelValid);
 		#endif
 		return S_NO_CHANNELS;
@@ -3327,8 +3327,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				Codec* detectedCodec = &newAudioFormat.codec;
 				auto mightBeBitstream = newAudioFormat.fs >= 48000 && mSinceLast < mBitstreamDetectionWindowLength;
 				auto examineBitstream = newAudioFormat.codec != PCM || mightBeBitstream || mDataBurstSize > 0;
-				// if (examineBitstream)
-				if (true)
+				if (examineBitstream)
 				{
 					CopyToBitstreamBuffer(reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples));
 					uint16_t bufferSize = mAudioFormat.bitDepthInBytes * MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.inputChannelCount;
@@ -3513,7 +3512,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			uint16_t remainingInBuffer = bufSize - bytesRead;
 			auto toCopy = std::min(remainingInBurst, remainingInBuffer);
 			#ifndef NO_QUILL
-			LOG_TRACE_L3(mLogger, "[{}] Copying {} bytes of databurst from {}-{} to {}-{}", mLogPrefix, toCopy, 
+			LOG_TRACE_L2(mLogger, "[{}] Copying {} bytes of databurst from {}-{} to {}-{}", mLogPrefix, toCopy, 
 				bytesRead, bytesRead + toCopy - 1, mDataBurstRead, mDataBurstRead + toCopy - 1);
 			#endif
 			for (auto i = 0; i < toCopy; i++)
@@ -3617,7 +3616,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			if (!foundPause)
 			{
 				foundPause = true;
-				LOG_TRACE_L3(mLogger, "[{}] Found PAUSE_OR_NULL ({}) with burst size {}, start skipping", mLogPrefix, dt, mDataBurstSize);
+				LOG_TRACE_L2(mLogger, "[{}] Found PAUSE_OR_NULL ({}) with burst size {}, start skipping", mLogPrefix, dt, mDataBurstSize);
 			}
 			#endif
 			mPaPbBytesRead = mPcPdBytesRead = 0;
@@ -3628,7 +3627,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 		#ifndef NO_QUILL
 		if (foundPause)
 		{
-			LOG_TRACE_L3(mLogger, "[{}] Exiting PAUSE_OR_NULL skip mode", mLogPrefix);
+			LOG_TRACE_L2(mLogger, "[{}] Exiting PAUSE_OR_NULL skip mode", mLogPrefix);
 			foundPause = false;
 		}
 		#endif
@@ -3683,7 +3682,7 @@ HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(const IEC61937Data
 	default:
 		*codec = PAUSE_OR_NULL;
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] Unknown IEC61937 datatype {} will be treated as PAUSE", mLogPrefix, dataType & 0xff);
+		LOG_WARNING(mLogger, "[{}] Unknown IEC61937 datatype {} will be treated as PAUSE", mLogPrefix, dataType & 0xff);
 		#endif
 		break;
 	}
