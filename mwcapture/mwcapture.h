@@ -185,6 +185,29 @@ struct AUDIO_FORMAT
     uint16_t dataBurstSize{ 0 };
 };
 
+enum DeviceType : uint8_t
+{
+    USB,
+    PRO
+};
+
+const char* devicetype_name(DeviceType e)
+{
+    switch (e)
+    {
+    case USB: return "USB";
+    case PRO: return "PRO";
+    }
+}
+
+struct DEVICE_INFO
+{
+    DeviceType deviceType;
+    std::string serialNo;
+    WCHAR devicePath[128];
+    HCHANNEL hChannel;
+};
+
 class MWReferenceClock final :
     public CBaseReferenceClock
 {

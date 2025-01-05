@@ -197,33 +197,61 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	}
 	#endif
 
-	int nIndex = MWGetChannelCount();
+	// critical lock
+	CAutoLock cAutoLock(&m_cStateLock);
+
+	int channelCount = MWGetChannelCount();
 	int nChannel = -1;
-	for (int i = 0; i < nIndex; i++)
+	std::vector<DEVICE_INFO> deviceInfos(channelCount);
+	for (int i = 0; i < channelCount; i++)
 	{
+		DEVICE_INFO di;
 		MWCAP_CHANNEL_INFO mci;
 		MWGetChannelInfoByIndex(i, &mci);
 		if (0 == strcmp(mci.szFamilyName, "Pro Capture"))
 		{
-			mValidChannel[mValidChannelCount] = i;
-			mValidChannelCount++;
+			di.deviceType = PRO;
+			di.serialNo = std::string{ mci.szBoardSerialNo };
+			mValidChannel[mValidChannelCount++] = i;
 			if (nChannel == -1)
 			{
 				nChannel = i;
 			}
 		}
+		else if (0 == strcmp(mci.szFamilyName, "USB Capture"))
+		{
+			di.deviceType = USB;
+			di.serialNo = std::string{ mci.szBoardSerialNo };
+			// TODO use MWCAP_DEVICE_NAME_MODE and MWUSBGetDeviceNameMode mode?
+		}
+
+		MWGetDevicePath(i, di.devicePath);
+		di.hChannel = MWOpenChannelByPath(di.devicePath);
+		if (di.hChannel == nullptr)
+		{
+			continue;
+		}
+		if (di.hChannel != nullptr)
+		{
+			MWCloseChannel(di.hChannel);
+			di.hChannel = nullptr;
+		}
+		deviceInfos.push_back(di);
+
+		#ifndef NO_QUILL
+		LOG_INFO(mLogger, "Found valid channel on {} device {} at path {} - device position is {}", devicetype_name(di.deviceType), 
+			di.serialNo, di.devicePath, deviceInfos.size());
+		#endif
 	}
 
-	#ifndef NO_QUILL
-	if (nIndex <= 0 || mValidChannelCount <= 0)
+	if (deviceInfos.empty())
 	{
-		LOG_ERROR(mLogger, "No valid channels to open on board:channel {}:{}", mBoardId, mChannelId);
+		#ifndef NO_QUILL
+		LOG_ERROR(mLogger, "No valid channels found");
+		#endif
+
 		// TODO throw
 	}
-	#endif
-
-	// critical lock
-	CAutoLock cAutoLock(&m_cStateLock);
 
 	// open channel
 	MWCAP_CHANNEL_INFO channelInfo{ 0 };
@@ -3666,7 +3694,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 
 // identifies codecs that are known/expected to be carried via HDMI in an AV setup
 // from IEC 61937-2 Table 2
-HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(const IEC61937DataType dataType, uint16_t* burstSize, enum Codec* codec)
+HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(const IEC61937DataType dataType, uint16_t* burstSize, Codec* codec)
 {
 	switch (dataType & 0xff)
 	{
