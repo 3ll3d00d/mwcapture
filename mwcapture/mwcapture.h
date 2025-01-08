@@ -191,12 +191,13 @@ enum DeviceType : uint8_t
     PRO
 };
 
-const char* devicetype_name(DeviceType e)
+inline const char* devicetype_to_name(DeviceType e)
 {
     switch (e)
     {
     case USB: return "USB";
     case PRO: return "PRO";
+    default: return "unknown";
     }
 }
 
@@ -206,6 +207,13 @@ struct DEVICE_INFO
     std::string serialNo;
     WCHAR devicePath[128];
     HCHANNEL hChannel;
+};
+
+struct CAPTURED_FRAME
+{
+    BYTE* data;
+    int length;
+    UINT64 ts;
 };
 
 class MWReferenceClock final :
@@ -236,8 +244,6 @@ public:
 class MagewellCaptureFilter final :
 	public CSource, public IReferenceClock, public IAMFilterMiscFlags
 {
-	HCHANNEL mChannel;
-
 public:
 
     DECLARE_IUNKNOWN;
@@ -249,6 +255,7 @@ public:
 
     HCHANNEL GetChannelHandle() const;
 
+    DeviceType GetDeviceType() const;
 
 private:
 
@@ -284,14 +291,9 @@ public:
     STDMETHODIMP Stop() override;
 
 private:
-	BOOL mInited;
+    DEVICE_INFO mDeviceInfo;
+    BOOL mInited;
     MWReferenceClock* mClock;
-
-    int mValidChannel[32] = { -1 };
-    int mValidChannelCount{ 0 };
-
-    int mBoardId{ -1 };
-    int mChannelId{ -1 };
 
 #ifndef NO_QUILL
     std::string mLogPrefix = "MagewellCaptureFilter";
@@ -387,13 +389,14 @@ protected:
     // Common - temp 
     HNOTIFY mNotify;
     ULONGLONG mStatusBits = 0;
-    HANDLE mCaptureEvent;
     HANDLE mNotifyEvent;
     MW_RESULT mLastMwResult;
     boolean mLastSampleDiscarded;
     boolean mSendMediaType;
     // per frame
     LONGLONG mFrameEndTime;
+    // pro only
+    HANDLE mCaptureEvent;
 };
 
 
@@ -413,6 +416,11 @@ public:
     HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
 
     //////////////////////////////////////////////////////////////////////////
+    //  CBaseOutputPin
+    //////////////////////////////////////////////////////////////////////////
+    HRESULT GetDeliveryBuffer(__deref_out IMediaSample** ppSample, __in_opt REFERENCE_TIME* pStartTime, __in_opt REFERENCE_TIME* pEndTime, DWORD dwFlags) override;
+
+    //////////////////////////////////////////////////////////////////////////
     //  CSourceStream
     //////////////////////////////////////////////////////////////////////////
     HRESULT FillBuffer(IMediaSample* pms) override;
@@ -420,15 +428,11 @@ public:
     HRESULT OnThreadCreate(void) override;
 
 protected:
-    VIDEO_SIGNAL mVideoSignal{};
-    VIDEO_FORMAT mVideoFormat{};
-    boolean mHasHdrInfoFrame{ false };
-
     // Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
     class VideoFrameGrabber
     {
     public:
-        VideoFrameGrabber(MagewellVideoCapturePin* pin, HCHANNEL channel, IMediaSample* pms);
+        VideoFrameGrabber(MagewellVideoCapturePin* pin, HCHANNEL hChannel, DeviceType deviceType, IMediaSample* pms);
         ~VideoFrameGrabber();
 
         VideoFrameGrabber(VideoFrameGrabber const&) = delete;
@@ -436,18 +440,41 @@ protected:
         VideoFrameGrabber(VideoFrameGrabber&&) = delete;
         VideoFrameGrabber& operator=(VideoFrameGrabber&&) = delete;
 
-        HRESULT grab();
+        HRESULT grab() const;
 
     private:
-        HCHANNEL channel;
+        HCHANNEL hChannel;
+        DeviceType deviceType;
         MagewellVideoCapturePin* pin;
         IMediaSample* pms;
         BYTE* pmsData;
     };
 
+    // USB only
+    class VideoCapture
+    {
+    public:
+        VideoCapture(MagewellVideoCapturePin* pin, HCHANNEL hChannel);
+        ~VideoCapture();
+
+    private:
+        MagewellVideoCapturePin* pin;
+        HANDLE mEvent;
+    };
+
+    VIDEO_SIGNAL mVideoSignal{};
+    VIDEO_FORMAT mVideoFormat{};
+    boolean mHasHdrInfoFrame{ false };
+    // USB only
+    VideoCapture* mVideoCapture{nullptr};
+    CAPTURED_FRAME mCapturedFrame{};
+
     static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal);
     static void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame);
-    void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
+    // USB only
+    static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
+
+	void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
     bool ShouldChangeMediaType();
     HRESULT LoadSignal(HCHANNEL* pChannel);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
@@ -463,7 +490,7 @@ class MagewellAudioCapturePin final :
 {
 public:
     MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
-    ~MagewellAudioCapturePin();
+    ~MagewellAudioCapturePin() override;
 
     void CopyToBitstreamBuffer(BYTE* pBuf);
     HRESULT ParseBitstreamBuffer(uint16_t bufSize, enum Codec** codec);
@@ -490,7 +517,18 @@ public:
     HRESULT FillBuffer(IMediaSample* pms) override;
 
 protected:
-    double minus_10db{ pow(10.0, -10.0 / 20.0) };
+    class AudioCapture
+    {
+    public:
+        AudioCapture(MagewellAudioCapturePin* pin, HCHANNEL hChannel);
+        ~AudioCapture();
+
+    private:
+        MagewellAudioCapturePin* pin;
+        HANDLE mEvent;
+    };
+
+	double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
     // IEC61937 processing
@@ -507,6 +545,8 @@ protected:
     bool mPacketMayBeCorrupt{ false };
     BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
     std::vector<BYTE> mDataBurstBuffer; // variable size
+    AudioCapture* mAudioCapture{ nullptr };
+    CAPTURED_FRAME mCapturedFrame{};
 
     #ifdef RECORD_RAW
     char mRawFileName[MAX_PATH];
@@ -523,7 +563,9 @@ protected:
     bool mProbeOnTimer{ false };
 
     static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
-    void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
+    static void CaptureFrame(const BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
+
+	void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
     HRESULT LoadSignal(HCHANNEL* pChannel);
     bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
