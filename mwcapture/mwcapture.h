@@ -222,10 +222,10 @@ class MWReferenceClock final :
     HCHANNEL mChannel;
 
 public:
-    MWReferenceClock(HRESULT* phr, HCHANNEL p_hchannel)
+    MWReferenceClock(HRESULT* phr, HCHANNEL hChannel)
         : CBaseReferenceClock(L"MWReferenceClock", nullptr, phr, nullptr)
     {
-        mChannel = p_hchannel;
+        mChannel = hChannel;
     }
 
     REFERENCE_TIME GetPrivateTime() override
