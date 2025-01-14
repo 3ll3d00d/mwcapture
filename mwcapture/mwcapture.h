@@ -124,6 +124,14 @@ struct HDR_META
     int transferFunction{ 4 };
 };
 
+struct USB_CAPTURE_FORMATS
+{
+    bool usb{ false };
+    MWCAP_VIDEO_OUTPUT_FOURCC fourccs;
+    MWCAP_VIDEO_OUTPUT_FRAME_INTERVAL frameIntervals;
+    MWCAP_VIDEO_OUTPUT_FRAME_SIZE frameSizes;
+};
+
 struct VIDEO_SIGNAL
 {
     MWCAP_INPUT_SPECIFIC_STATUS inputStatus;
@@ -220,18 +228,27 @@ class MWReferenceClock final :
     public CBaseReferenceClock
 {
     HCHANNEL mChannel;
+    bool mIsPro;
 
 public:
-    MWReferenceClock(HRESULT* phr, HCHANNEL hChannel)
-        : CBaseReferenceClock(L"MWReferenceClock", nullptr, phr, nullptr)
+    MWReferenceClock(HRESULT* phr, HCHANNEL hChannel, bool isProDevice)
+        : CBaseReferenceClock(L"MWReferenceClock", nullptr, phr, nullptr),
+    mChannel(hChannel),
+    mIsPro(isProDevice)
     {
-        mChannel = hChannel;
     }
 
     REFERENCE_TIME GetPrivateTime() override
     {
         REFERENCE_TIME t;
-        MWGetDeviceTime(mChannel, &t);
+        if (mIsPro)
+        {
+            MWGetDeviceTime(mChannel, &t);
+        }
+        else
+        {
+            t = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+        }
         return t;
     }
 };
@@ -256,6 +273,8 @@ public:
     HCHANNEL GetChannelHandle() const;
 
     DeviceType GetDeviceType() const;
+
+    void GetReferenceTime(REFERENCE_TIME* rt) const;
 
 private:
 
@@ -309,6 +328,7 @@ class MagewellCapturePin :
 {
 public:
     MagewellCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix);
+    ~MagewellCapturePin();
 
     DECLARE_IUNKNOWN;
 
@@ -409,6 +429,8 @@ class MagewellVideoCapturePin final :
 public:
     MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
 
+    void GetReferenceTime(REFERENCE_TIME* rt) const;
+
 	//////////////////////////////////////////////////////////////////////////
     //  IAMStreamConfig
     //////////////////////////////////////////////////////////////////////////
@@ -464,18 +486,19 @@ protected:
 
     VIDEO_SIGNAL mVideoSignal{};
     VIDEO_FORMAT mVideoFormat{};
+    USB_CAPTURE_FORMATS mUsbCaptureFormats{};
     boolean mHasHdrInfoFrame{ false };
     // USB only
     VideoCapture* mVideoCapture{nullptr};
     CAPTURED_FRAME mCapturedFrame{};
 
-    static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal);
+    static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal, USB_CAPTURE_FORMATS* captureFormats);
     static void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame);
     // USB only
     static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
 	void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
-    bool ShouldChangeMediaType();
+    bool ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat);
     HRESULT LoadSignal(HCHANNEL* pChannel);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
     void StopCapture() override;
