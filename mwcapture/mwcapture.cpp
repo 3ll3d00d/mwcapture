@@ -229,6 +229,44 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 			#endif
 			continue;
 		}
+		DWORD videoInputTypeCount = 0;
+		if (MW_SUCCEEDED != MWGetVideoInputSourceArray(di.hChannel, nullptr, &videoInputTypeCount))
+		{
+			MWCloseChannel(di.hChannel);
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Unable to detect video inputs on {} device {} at path {}, ignoring", mLogPrefix,
+				devicetype_to_name(di.deviceType), di.serialNo, std::wstring{ di.devicePath });
+			#endif
+			continue;
+		}
+		DWORD videoInputTypes[16] = { 0 };
+		if (MW_SUCCEEDED != MWGetVideoInputSourceArray(di.hChannel, videoInputTypes, &videoInputTypeCount)) {
+			MWCloseChannel(di.hChannel);
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Unable to load supported video input types on {} device {} at path {}, ignoring", mLogPrefix,
+				devicetype_to_name(di.deviceType), di.serialNo, std::wstring{ di.devicePath });
+			#endif
+			continue;
+		}
+		boolean hdmiFound = false;
+		for (int j = 0; j < videoInputTypeCount && !hdmiFound; j++) {
+			if (INPUT_TYPE(videoInputTypes[j]) == MWCAP_VIDEO_INPUT_TYPE_HDMI) {
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] Found HDMI input at position {} on {} device {} at path {}, ignoring", mLogPrefix,
+					j, devicetype_to_name(di.deviceType), di.serialNo, std::wstring{ di.devicePath });
+				#endif
+				hdmiFound = true;
+			}
+		}
+		if (!hdmiFound)
+		{
+			MWCloseChannel(di.hChannel);
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Found device but no HDMI input available on {} device {} at path {}, ignoring", mLogPrefix,
+				devicetype_to_name(di.deviceType), di.serialNo, std::wstring{ di.devicePath });
+			#endif
+			continue;
+		}
 
 		// TODO match against targetPath
 		if (diToUse == nullptr) // && di.devicePath == targetPath || targetPath == nullptr
@@ -929,7 +967,19 @@ MagewellVideoCapturePin::VideoCapture::~VideoCapture()
 		LOG_TRACE_L2(pin->mLogger, "[{}] MWDestroyVideoCapture", pin->mLogPrefix);
 		#endif
 
-		MWDestoryVideoCapture(mEvent);
+		CAutoLock lck(pin->m_pLock);
+		if (MW_SUCCEEDED == MWDestoryVideoCapture(mEvent))
+		{
+			#ifndef NO_QUILL
+			LOG_INFO(pin->mLogger, "[{}] MWDestoryVideoCapture complete", pin->mLogPrefix);
+			#endif
+		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(pin->mLogger, "[{}] MWDestoryVideoCapture failed", pin->mLogPrefix);
+			#endif
+		}
 	}
 }
 
@@ -1130,10 +1180,34 @@ MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFi
 
 	if (mFilter->GetDeviceType() == USB)
 	{
-		mUsbCaptureFormats.usb = true;
-		MWUSBGetVideoOutputFOURCC(hChannel, &mUsbCaptureFormats.fourccs);
-		MWUSBGetVideoOutputFrameInterval(hChannel, &mUsbCaptureFormats.frameIntervals);
-		MWUSBGetVideoOutputFrameSize(hChannel, &mUsbCaptureFormats.frameSizes);
+		if (MW_SUCCEEDED == MWUSBGetVideoOutputFOURCC(hChannel, &mUsbCaptureFormats.fourccs))
+		{
+			if (MW_SUCCEEDED == MWUSBGetVideoOutputFrameInterval(hChannel, &mUsbCaptureFormats.frameIntervals))
+			{
+				if (MW_SUCCEEDED == MWUSBGetVideoOutputFrameSize(hChannel, &mUsbCaptureFormats.frameSizes))
+				{
+					mUsbCaptureFormats.usb = true;
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Could not load USB video frame sizes", mLogPrefix);
+					#endif
+				}
+			}
+			else
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogger, "[{}] Could not load USB video frame intervals", mLogPrefix);
+				#endif
+			}
+		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Could not load USB video FourCCs", mLogPrefix);
+			#endif
+		}
 	}
 
 	auto hr = LoadSignal(&hChannel);
@@ -1619,7 +1693,7 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 	REFERENCE_TIME* pEndTime, DWORD dwFlags)
 {
 	auto hasFrame = false;
-	auto retVal = S_OK;
+	auto retVal = S_FALSE;
 	auto proDevice = mFilter->GetDeviceType() == PRO;
 	auto hChannel = mFilter->GetChannelHandle();
 
@@ -1908,7 +1982,8 @@ STDMETHODIMP MagewellVideoCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** 
 MagewellAudioCapturePin::AudioCapture::AudioCapture(MagewellAudioCapturePin* pin, HCHANNEL hChannel) :
 	pin(pin)
 {
-	mEvent = MWCreateAudioCapture(hChannel, MWCAP_AUDIO_CAPTURE_NODE_DEFAULT, pin->mAudioFormat.fs,
+	// pin->mAudioFormat.fs
+	mEvent = MWCreateAudioCapture(hChannel, MWCAP_AUDIO_CAPTURE_NODE_EMBEDDED_CAPTURE, 48000,
 		pin->mAudioFormat.bitDepth, pin->mAudioFormat.inputChannelCount, CaptureFrame, pin);
 	if (mEvent == nullptr)
 	{
@@ -1923,7 +1998,22 @@ MagewellAudioCapturePin::AudioCapture::~AudioCapture()
 {
 	if (mEvent != nullptr)
 	{
-		MWDestoryAudioCapture(mEvent);
+		#ifndef NO_QUILL
+		LOG_INFO(pin->mLogger, "[{}] MWDestoryAudioCapture", pin->mLogPrefix);
+		#endif
+		CAutoLock lck(pin->m_pLock);
+		if (MW_SUCCEEDED == MWDestoryAudioCapture(mEvent))
+		{
+			#ifndef NO_QUILL
+			LOG_INFO(pin->mLogger, "[{}] MWDestoryAudioCapture complete", pin->mLogPrefix);
+			#endif
+		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(pin->mLogger, "[{}] MWDestoryAudioCapture failed", pin->mLogPrefix);
+			#endif
+		}
 	}
 }
 
@@ -3089,9 +3179,9 @@ void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORM
 	}
 }
 
-HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
+HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 {
-	mLastMwResult = MWGetAudioSignalStatus(*pChannel, &mAudioSignal.signalStatus);
+	mLastMwResult = MWGetAudioSignalStatus(*hChannel, &mAudioSignal.signalStatus);
 	if (MW_SUCCEEDED != mLastMwResult)
 	{
 		#ifndef NO_QUILL
@@ -3100,22 +3190,52 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* pChannel)
 		return S_FALSE;
 	}
 
-	DWORD tPdwValidFlag = 0;
-	MWGetHDMIInfoFrameValidFlag(*pChannel, &tPdwValidFlag);
-	HDMI_INFOFRAME_PACKET pkt;
-	if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AUDIO)
+	MWCAP_INPUT_SPECIFIC_STATUS status;
+	mLastMwResult = MWGetInputSpecificStatus(*hChannel, &status);
+	if (mLastMwResult == MW_SUCCEEDED)
 	{
-		MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_AUDIO, &pkt);
-		mAudioSignal.audioInfo = pkt.audioInfoFramePayload;
+		DWORD tPdwValidFlag = 0;
+		if (!status.bValid)
+		{
+			#ifndef NO_QUILL
+			LOG_ERROR(mLogger, "[{}] ERROR! MWGetInputSpecificStatus is invalid", mLogPrefix);
+			#endif
+		}
+		else if (status.dwVideoInputType != MWCAP_VIDEO_INPUT_TYPE_HDMI) 
+		{
+			#ifndef NO_QUILL
+			LOG_ERROR(mLogger, "[{}] ERROR! Video input type is not HDMI {}", mLogPrefix, status.dwVideoInputType);
+			#endif
+		}
+		else if (MW_SUCCEEDED != MWGetHDMIInfoFrameValidFlag(*hChannel, &tPdwValidFlag))
+		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogger, "[{}] Unable to detect HDMI InfoFrame", mLogPrefix);
+			#endif
+		}
+		if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AUDIO)
+		{
+			HDMI_INFOFRAME_PACKET pkt;
+			MWGetHDMIInfoFramePacket(*hChannel, MWCAP_HDMI_INFOFRAME_ID_AUDIO, &pkt);
+			mAudioSignal.audioInfo = pkt.audioInfoFramePayload;
+		}
+		else
+		{
+			mAudioSignal.audioInfo = {};
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogger, "[{}] No HDMI Audio infoframe detected", mLogPrefix);
+			#endif
+			return S_FALSE;
+		}
 	}
 	else
 	{
-		mAudioSignal.audioInfo = {};
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] No HDMI Audio infoframe detected", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] ERROR! MWGetInputSpecificStatus", mLogPrefix);
 		#endif
 		return S_FALSE;
 	}
+
 	if (mAudioSignal.signalStatus.wChannelValid == 0)
 	{
 		#ifndef NO_QUILL

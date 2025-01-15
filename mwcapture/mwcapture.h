@@ -589,7 +589,7 @@ protected:
     static void CaptureFrame(const BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
 	void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
-    HRESULT LoadSignal(HCHANNEL* pChannel);
+    HRESULT LoadSignal(HCHANNEL* hChannel);
     bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
     void StopCapture() override;
