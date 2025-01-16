@@ -1750,6 +1750,15 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			BACKOFF;
 			continue;
 		}
+		if (mVideoSignal.inputStatus.hdmiStatus.byBitDepth == 0)
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0, retry after backoff", mLogPrefix);
+			#endif
+
+			BACKOFF;
+			continue;
+		}
 
 		VIDEO_FORMAT newVideoFormat{};
 		LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
@@ -3710,6 +3719,27 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		{
 			#ifndef NO_QUILL
 			LOG_TRACE_L1(mLogger, "[{}] Unable to load signal, retry after backoff", mLogPrefix);
+			#endif
+
+			mSinceCodecChange = 0;
+			BACKOFF;
+			continue;
+		}
+		if (mAudioSignal.signalStatus.cBitsPerSample == 0)
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0, retry after backoff", mLogPrefix);
+			#endif
+
+			mSinceCodecChange = 0;
+			BACKOFF;
+			continue;
+		}
+		if (mAudioSignal.audioInfo.byChannelAllocation > 0x31)
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] Reported channel allocation is {}, retry after backoff", mLogPrefix, 
+				mAudioSignal.audioInfo.byChannelAllocation);
 			#endif
 
 			mSinceCodecChange = 0;
