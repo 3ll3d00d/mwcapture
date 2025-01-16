@@ -964,22 +964,26 @@ MagewellVideoCapturePin::VideoCapture::~VideoCapture()
 	if (mEvent != nullptr)
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L2(pin->mLogger, "[{}] MWDestroyVideoCapture", pin->mLogPrefix);
+		LOG_TRACE_L3(pin->mLogger, "[{}] ~VideoCapture", pin->mLogPrefix);
 		#endif
 
-		CAutoLock lck(pin->m_pLock);
-		if (MW_SUCCEEDED == MWDestoryVideoCapture(mEvent))
+		#ifndef NO_QUILL
+		LOG_TRACE_L3(pin->mLogger, "[{}] Ready to MWDestoryVideoCapture", pin->mLogPrefix);
+		#endif
+
+		const auto hr = MWDestoryVideoCapture(mEvent);
+		mEvent = nullptr;
+
+		#ifndef NO_QUILL
+		if (MW_SUCCEEDED == hr)
 		{
-			#ifndef NO_QUILL
 			LOG_INFO(pin->mLogger, "[{}] MWDestoryVideoCapture complete", pin->mLogPrefix);
-			#endif
 		}
 		else
 		{
-			#ifndef NO_QUILL
 			LOG_WARNING(pin->mLogger, "[{}] MWDestoryVideoCapture failed", pin->mLogPrefix);
-			#endif
 		}
+		#endif
 	}
 }
 
@@ -1082,7 +1086,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 		}
 		else
 		{
-			CAutoLock lck(pin->m_pLock);
+			CAutoLock lck(&pin->mCaptureCritSec);
 			memcpy(pmsData, pin->mCapturedFrame.data, pin->mCapturedFrame.length);
 			hasFrame = true;
 		}
@@ -1600,6 +1604,15 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 
 		return S_FALSE;
 	}
+	if (!mVideoSignal.inputStatus.bValid)
+	{
+		#ifndef NO_QUILL
+		LOG_WARNING(mLogger, "MagewellVideoCapturePin::LoadSignal MWGetInputSpecificStatus is not valid");
+		#endif
+
+		return S_FALSE;
+	}
+
 	DWORD tPdwValidFlag = 0;
 	MWGetHDMIInfoFrameValidFlag(*pChannel, &tPdwValidFlag);
 	HDMI_INFOFRAME_PACKET pkt;
@@ -1661,7 +1674,7 @@ HRESULT MagewellVideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const 
 			mVideoCapture = new VideoCapture(this, mFilter->GetChannelHandle());
 			if (newVideoFormat->imageSize > mVideoFormat.imageSize)
 			{
-				CAutoLock lck(m_pLock);
+				CAutoLock lck(&mCaptureCritSec);
 				delete mCapturedFrame.data;
 				mCapturedFrame.data = new BYTE[newVideoFormat->imageSize];
 			}
@@ -1675,7 +1688,7 @@ HRESULT MagewellVideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const 
 void MagewellVideoCapturePin::CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam)
 {
 	MagewellVideoCapturePin* pin = static_cast<MagewellVideoCapturePin*>(pParam);
-	CAutoLock lck(pin->m_pLock);
+	CAutoLock lck(&pin->mCaptureCritSec);
 	memcpy(pin->mCapturedFrame.data, pbFrame, cbFrame);
 	pin->mCapturedFrame.length = cbFrame;
 	pin->mCapturedFrame.ts = u64TimeStamp;
@@ -1982,8 +1995,7 @@ STDMETHODIMP MagewellVideoCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** 
 MagewellAudioCapturePin::AudioCapture::AudioCapture(MagewellAudioCapturePin* pin, HCHANNEL hChannel) :
 	pin(pin)
 {
-	// pin->mAudioFormat.fs
-	mEvent = MWCreateAudioCapture(hChannel, MWCAP_AUDIO_CAPTURE_NODE_EMBEDDED_CAPTURE, 48000,
+	mEvent = MWCreateAudioCapture(hChannel, MWCAP_AUDIO_CAPTURE_NODE_EMBEDDED_CAPTURE, pin->mAudioFormat.fs,
 		pin->mAudioFormat.bitDepth, pin->mAudioFormat.inputChannelCount, CaptureFrame, pin);
 	if (mEvent == nullptr)
 	{
@@ -1999,21 +2011,26 @@ MagewellAudioCapturePin::AudioCapture::~AudioCapture()
 	if (mEvent != nullptr)
 	{
 		#ifndef NO_QUILL
-		LOG_INFO(pin->mLogger, "[{}] MWDestoryAudioCapture", pin->mLogPrefix);
+		LOG_TRACE_L3(pin->mLogger, "[{}] AudioCapture", pin->mLogPrefix);
 		#endif
-		CAutoLock lck(pin->m_pLock);
-		if (MW_SUCCEEDED == MWDestoryAudioCapture(mEvent))
+
+		#ifndef NO_QUILL
+		LOG_TRACE_L3(pin->mLogger, "[{}] Ready to MWDestoryAudioCapture", pin->mLogPrefix);
+		#endif
+
+		const auto hr = MWDestoryAudioCapture(mEvent);
+		mEvent = nullptr;
+
+		#ifndef NO_QUILL
+		if (MW_SUCCEEDED == hr)
 		{
-			#ifndef NO_QUILL
-			LOG_INFO(pin->mLogger, "[{}] MWDestoryAudioCapture complete", pin->mLogPrefix);
-			#endif
+			LOG_TRACE_L3(pin->mLogger, "[{}] MWDestoryAudioCapture complete", pin->mLogPrefix);
 		}
 		else
 		{
-			#ifndef NO_QUILL
 			LOG_WARNING(pin->mLogger, "[{}] MWDestoryAudioCapture failed", pin->mLogPrefix);
-			#endif
 		}
+		#endif
 	}
 }
 
@@ -2205,7 +2222,14 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 	auto audioIn = *audioSignal;
 	auto currentChannelAlloc = audioFormat->channelAllocation;
 	auto currentChannelMask = audioFormat->channelValidityMask;
-	audioFormat->fs = audioIn.signalStatus.dwSampleRate;
+	if (mFilter->GetDeviceType() == USB)
+	{
+		audioFormat->fs = audioIn.signalStatus.dwSampleRate;
+	}
+	else
+	{
+		audioFormat->fs = 48000;
+	}
 	audioFormat->bitDepth = audioIn.signalStatus.cBitsPerSample;
 	audioFormat->bitDepthInBytes = audioFormat->bitDepth / 8;
 	audioFormat->codec = audioIn.signalStatus.bLPCM ? PCM : BITSTREAM;
@@ -3315,7 +3339,7 @@ bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat
 void MagewellAudioCapturePin::CaptureFrame(const BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam)
 {
 	MagewellAudioCapturePin* pin = static_cast<MagewellAudioCapturePin*>(pParam);
-	CAutoLock lck(pin->m_pLock);
+	CAutoLock lck(&pin->mCaptureCritSec);
 	memcpy(pin->mCapturedFrame.data, pbFrame, cbFrame);
 	pin->mCapturedFrame.length = cbFrame;
 	pin->mCapturedFrame.ts = u64TimeStamp;
@@ -3373,7 +3397,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 		}
 		else
 		{
-			captureLock = new CAutoLock(m_pLock);
+			captureLock = new CAutoLock(&mCaptureCritSec);
 			pbAudioFrame = mCapturedFrame.data;
 		}
 
@@ -3778,7 +3802,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
-				captureLock = new CAutoLock(m_pLock);
+				captureLock = new CAutoLock(&mCaptureCritSec);
 				frame = mCapturedFrame.data;
 			}
 		}

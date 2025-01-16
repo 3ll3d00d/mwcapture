@@ -400,7 +400,8 @@ protected:
     CustomLogger* mLogger;
 #endif
 
-    LONGLONG mFrameCounter;
+    CCritSec mCaptureCritSec;
+	LONGLONG mFrameCounter;
     bool mPreview;
     MagewellCaptureFilter* mFilter;
     WORD mSinceLast{0};
