@@ -34,6 +34,7 @@ using CustomFrontend = quill::FrontendImpl<CustomFrontendOptions>;
 using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #else
 #include <vector>
+#include <chrono>
 #endif // !NO_QUILL
 
 #include <string>
