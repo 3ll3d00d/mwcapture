@@ -25,6 +25,7 @@
 
 #define CreateComObject(clsid, iid, var) CoCreateInstance( clsid, NULL, CLSCTX_INPROC_SERVER, iid, (void **)&var);
 
+// TODO register n filters per type
 #if MWCAPTURE_NAME_SUFFIX == 1
 #define FILTER_NAME L"Magewell Pro Capture (Trace)"
  // {9E53337D-9E32-40B4-AD39-B8525CDECD45}
