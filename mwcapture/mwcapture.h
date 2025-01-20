@@ -100,6 +100,7 @@ static const std::string codecNames[8] = {
 	"PAUSE_OR_NULL"
 };
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
+constexpr int maxFrameLengthInBytes = MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes;
 
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
 EXTERN_C const GUID MEDIASUBTYPE_PCM_IN24;
@@ -517,7 +518,7 @@ public:
     MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
     ~MagewellAudioCapturePin() override;
 
-    void CopyToBitstreamBuffer(BYTE* pBuf);
+    void CopyToBitstreamBuffer(BYTE* buf);
     HRESULT ParseBitstreamBuffer(uint16_t bufSize, enum Codec** codec);
     HRESULT GetCodecFromIEC61937Preamble(enum IEC61937DataType dataType, uint16_t* burstSize, enum Codec* codec);
 
@@ -556,6 +557,7 @@ protected:
 	double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
+    BYTE mFrameBuffer[maxFrameLengthInBytes];
     // IEC61937 processing
     uint32_t mBitstreamDetectionWindowLength{ 0 };
     uint8_t mPaPbBytesRead{ 0 };
@@ -568,7 +570,7 @@ protected:
     uint32_t mBytesSincePaPb{ 0 };
     uint64_t mSinceCodecChange{ 0 };
     bool mPacketMayBeCorrupt{ false };
-    BYTE mCompressedBuffer[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes];
+    BYTE mCompressedBuffer[maxFrameLengthInBytes];
     std::vector<BYTE> mDataBurstBuffer; // variable size
     AudioCapture* mAudioCapture{ nullptr };
     CAPTURED_FRAME mCapturedFrame{};

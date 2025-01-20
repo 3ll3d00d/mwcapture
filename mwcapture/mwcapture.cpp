@@ -2056,10 +2056,8 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 	),
 	mDataBurstBuffer(bitstreamBufferSize) // initialise to a reasonable default size that is not wastefully large but also is unlikely to need to be expanded very often
 {
-	if (mFilter->GetDeviceType() == USB)
-	{
-		mCapturedFrame.data = new BYTE[MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * 4];
-	}
+	mCapturedFrame.data = new BYTE[maxFrameLengthInBytes];
+	mCapturedFrame.length = maxFrameLengthInBytes;
 
 	mDataBurstBuffer.assign(bitstreamBufferSize, 0);
 	DWORD dwInputCount = 0;
@@ -3363,7 +3361,6 @@ void MagewellAudioCapturePin::CaptureFrame(const BYTE* pbFrame, int cbFrame, UIN
 
 HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 {
-	auto h_channel = mFilter->GetChannelHandle();
 	auto retVal = S_OK;
 
 	if (CheckStreamState(nullptr) == STREAM_DISCARDING)
@@ -3398,18 +3395,6 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 	}
 	else
 	{
-		CAutoLock* captureLock = nullptr;
-		BYTE* pbAudioFrame;
-		if (mFilter->GetDeviceType() == PRO)
-		{
-			pbAudioFrame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
-		}
-		else
-		{
-			captureLock = new CAutoLock(&mCaptureCritSec);
-			pbAudioFrame = mCapturedFrame.data;
-		}
-
 		// channel order on input is L0-L3,R0-R3 which has to be remapped to L0,R0,L1,R1,L2,R2,L3,R3
 		// each 4 byte sample is left zero padded if the incoming stream is a lower bit depth (which is typically the case for HDMI audio)
 		// must also apply the channel offsets to ensure each input channel is offset as necessary to be written to the correct output channel index
@@ -3417,6 +3402,13 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 		auto outputChannelIdxR = -1;
 		auto outputChannels = -1;
 		auto mustRescaleLfe = mAudioFormat.lfeLevelAdjustment != unity; // NOLINT(clang-diagnostic-float-equal)
+
+		#ifndef NO_QUILL
+		if (mustRescaleLfe)
+		{
+			LOG_ERROR(mLogger, "[{}] ERROR! Rescale LFE not implemented!", mLogPrefix);
+		}
+		#endif
 
 		for (auto pairIdx = 0; pairIdx < mAudioFormat.inputChannelCount / 2; ++pairIdx)
 		{
@@ -3452,11 +3444,11 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 				{
 					// PCM in network (big endian) byte order hence have to shift rather than use memcpy
 					//   convert to an int
-					int sampleValueL = pbAudioFrame[inByteStartIdxL] << 24 | pbAudioFrame[inByteStartIdxL + 1] << 16 |
-						pbAudioFrame[inByteStartIdxL + 2] << 8 | pbAudioFrame[inByteStartIdxL + 3];
+					int sampleValueL = mFrameBuffer[inByteStartIdxL] << 24 | mFrameBuffer[inByteStartIdxL + 1] << 16 |
+						mFrameBuffer[inByteStartIdxL + 2] << 8 | mFrameBuffer[inByteStartIdxL + 3];
 
-					int sampleValueR = pbAudioFrame[inByteStartIdxR] << 24 | pbAudioFrame[inByteStartIdxR + 1] << 16 |
-						pbAudioFrame[inByteStartIdxR + 2] << 8 | pbAudioFrame[inByteStartIdxR + 3];
+					int sampleValueR = mFrameBuffer[inByteStartIdxR] << 24 | mFrameBuffer[inByteStartIdxR + 1] << 16 |
+						mFrameBuffer[inByteStartIdxR + 2] << 8 | mFrameBuffer[inByteStartIdxR + 3];
 
 					//   adjust gain to a double
 					double scaledValueL = mAudioFormat.lfeLevelAdjustment * sampleValueL;
@@ -3478,14 +3470,33 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 						{
 							auto outIdx = outByteStartIdxL + k;
 							bytesCaptured++;
-							if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxL + k];
+							if (outIdx < sampleSize)
+							{
+								pmsData[outIdx] = mFrameBuffer[inByteStartIdxL + k];
+							}
+							else
+							{
+								#ifndef NO_QUILL
+								LOG_ERROR(mLogger, "[{}] ERROR! Skipping L byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
+								#endif
+							}
 						}
 
 						if (outputOffsetR != not_present)
 						{
 							auto outIdx = outByteStartIdxR + k;
 							bytesCaptured++;
-							if (outIdx < sampleSize) pmsData[outIdx] = pbAudioFrame[inByteStartIdxR + k];
+							if (outIdx < sampleSize)
+							{
+								pmsData[outIdx] = mFrameBuffer[inByteStartIdxR + k];
+							}
+							else
+							{
+								#ifndef NO_QUILL
+								LOG_ERROR(mLogger, "[{}] ERROR! Skipping R byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
+								#endif
+
+							}
 						}
 					}
 				}
@@ -3493,7 +3504,10 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 			}
 		}
 
-		delete captureLock;
+		#ifdef RECORD_ENCODED
+		LOG_TRACE_L3(mLogger, "[{}] pcm_out,{},{}", mLogPrefix, mFrameCounter, bytesCaptured);
+		fwrite(pmsData, bytesCaptured, 1, mEncodedOutFile); 
+		#endif
 	}
 
 	mFilter->GetReferenceTime(&mFrameEndTime);
@@ -3688,11 +3702,10 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 	auto proDevice = mFilter->GetDeviceType() == PRO;
 	auto hasFrame = false;
 	auto retVal = S_FALSE;
-	BYTE* frame = nullptr;
-	CAutoLock* captureLock = nullptr;
 	// keep going til we have a frame to process
 	while (!hasFrame)
 	{
+		auto frameCopied = false;
 		if (CheckStreamState(nullptr) == STREAM_DISCARDING)
 		{
 			#ifndef NO_QUILL
@@ -3776,8 +3789,17 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 
 		if (dwRet == WAIT_OBJECT_0)
 		{
+			// TODO magewell SDK bug means audio is always reported as PCM, until fixed allow 6 frames of audio to pass through before declaring it definitely PCM
+			// 12 frames is 7680 bytes of 2 channel audio & 30720 of 8 channel which should be more than enough to be sure
+			mBitstreamDetectionWindowLength = std::lround(bitstreamDetectionWindowSecs / (static_cast<double>(MWCAP_AUDIO_SAMPLES_PER_FRAME) / newAudioFormat.fs));
+			if (mDetectedCodec != PCM)
+			{
+				newAudioFormat.codec = mDetectedCodec;
+			}
+
 			if (proDevice)
 			{
+				mStatusBits = 0;
 				mLastMwResult = MWGetNotifyStatus(hChannel, mNotify, &mStatusBits);
 				if (mStatusBits & MWCAP_NOTIFY_AUDIO_SIGNAL_CHANGE)
 				{
@@ -3808,7 +3830,12 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					mLastMwResult = MWCaptureAudioFrame(hChannel, &mAudioSignal.frameInfo);
 					if (MW_SUCCEEDED == mLastMwResult)
 					{
-						frame = reinterpret_cast<BYTE*>(mAudioSignal.frameInfo.adwSamples);
+						#ifndef NO_QUILL
+						LOG_TRACE_L1(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
+						#endif
+
+						memcpy(mFrameBuffer, mAudioSignal.frameInfo.adwSamples, maxFrameLengthInBytes);
+						frameCopied = true;
 					}
 					else
 					{
@@ -3832,37 +3859,36 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
-				captureLock = new CAutoLock(&mCaptureCritSec);
-				frame = mCapturedFrame.data;
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
+				#endif
+
+				CAutoLock lck(&mCaptureCritSec);
+				memcpy(mFrameBuffer, mCapturedFrame.data, mCapturedFrame.length);
+				frameCopied = true;
 			}
 		}
 
-		if (frame != nullptr)
+		if (frameCopied)
 		{
 			mFrameCounter++;
 			#ifndef NO_QUILL
 			LOG_TRACE_L3(mLogger, "[{}] Reading frame {}", mLogPrefix, mFrameCounter);
 			#endif
+
 			#ifdef RECORD_RAW
-			auto bytesToWrite = MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * 4;
-			LOG_TRACE_L3(mLogger, "[{}] raw,{},{}", mLogPrefix, mFrameCounter, bytesToWrite);
-			fwrite(frame, bytesToWrite, 1, mRawFile);
+			#ifndef NO_QUILL
+			LOG_TRACE_L3(mLogger, "[{}] raw,{},{}", mLogPrefix, mFrameCounter, maxFrameLengthInBytes);
+			#endif
+			fwrite(mFrameBuffer, maxFrameLengthInBytes, 1, mRawFile);
 			#endif
 
-			// TODO magewell SDK bug means audio is always reported as PCM, until fixed allow 6 frames of audio to pass through before declaring it definitely PCM
-			// 12 frames is 7680 bytes of 2 channel audio & 30720 of 8 channel which should be more than enough to be sure
-			mBitstreamDetectionWindowLength = std::lround(bitstreamDetectionWindowSecs / (static_cast<double>(MWCAP_AUDIO_SAMPLES_PER_FRAME) / newAudioFormat.fs));
-			if (mDetectedCodec != PCM)
-			{
-				newAudioFormat.codec = mDetectedCodec;
-			}
 			Codec* detectedCodec = &newAudioFormat.codec;
-			auto mightBeBitstream = newAudioFormat.fs >= 48000 && mSinceLast < mBitstreamDetectionWindowLength;
-			auto examineBitstream = newAudioFormat.codec != PCM || mightBeBitstream || mDataBurstSize > 0;
+			const auto mightBeBitstream = newAudioFormat.fs >= 48000 && mSinceLast < mBitstreamDetectionWindowLength;
+			const auto examineBitstream = newAudioFormat.codec != PCM || mightBeBitstream || mDataBurstSize > 0;
 			if (examineBitstream)
 			{
-				CopyToBitstreamBuffer(frame);
-				delete captureLock;
+				CopyToBitstreamBuffer(mFrameBuffer);
 
 				uint16_t bufferSize = mAudioFormat.bitDepthInBytes * MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.inputChannelCount;
 				auto res = ParseBitstreamBuffer(bufferSize, &detectedCodec);
@@ -3898,7 +3924,10 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					if (++mSinceLast < mBitstreamDetectionWindowLength)
 					{
 						// skip to the next frame if we're in the initial probe otherwise allow publication downstream to continue
-						if (!mProbeOnTimer) continue;
+						if (!mProbeOnTimer)
+						{
+							continue;
+						}
 					}
 					else
 					{
@@ -3916,7 +3945,6 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 			else
 			{
-				delete captureLock;
 				mSinceLast++;
 			}
 			int probeTrigger = std::lround(mBitstreamDetectionWindowLength * bitstreamDetectionRetryAfter);
@@ -3984,7 +4012,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 }
 
 // copies the inbound byte stream into a format that can be probed
-void MagewellAudioCapturePin::CopyToBitstreamBuffer(BYTE* pBuf)
+void MagewellAudioCapturePin::CopyToBitstreamBuffer(BYTE* buf)
 {
 	// copies from input to output skipping zero bytes and with a byte swap per sample
 	auto bytesCopied = 0;
@@ -4001,8 +4029,8 @@ void MagewellAudioCapturePin::CopyToBitstreamBuffer(BYTE* pBuf)
 				auto inL = inStartL + maxBitDepthInBytes - byteIdx - 1;
 				auto inR = inStartR + maxBitDepthInBytes - byteIdx - 1;
 				// byte swap because compressed audio is big endian 
-				mCompressedBuffer[outL] = pBuf[inL];
-				mCompressedBuffer[outR] = pBuf[inR];
+				mCompressedBuffer[outL] = buf[inL];
+				mCompressedBuffer[outR] = buf[inR];
 				bytesCopied += 2;
 			}
 		}
