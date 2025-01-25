@@ -3833,7 +3833,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					if (MW_SUCCEEDED == mLastMwResult)
 					{
 						#ifndef NO_QUILL
-						LOG_TRACE_L1(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
+						LOG_TRACE_L3(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
 						#endif
 
 						memcpy(mFrameBuffer, mAudioSignal.frameInfo.adwSamples, maxFrameLengthInBytes);
@@ -3862,7 +3862,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			else
 			{
 				#ifndef NO_QUILL
-				LOG_TRACE_L1(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
+				LOG_TRACE_L3(mLogger, "[{}] Audio frame buffered and captured", mLogPrefix);
 				#endif
 
 				CAutoLock lck(&mCaptureCritSec);
@@ -3875,7 +3875,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		{
 			mFrameCounter++;
 			#ifndef NO_QUILL
-			LOG_TRACE_L3(mLogger, "[{}] Reading frame {}", mLogPrefix, mFrameCounter);
+			LOG_TRACE_L2(mLogger, "[{}] Reading frame {}", mLogPrefix, mFrameCounter);
 			#endif
 
 			#ifdef RECORD_RAW
@@ -3890,12 +3890,24 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			const auto examineBitstream = newAudioFormat.codec != PCM || mightBeBitstream || mDataBurstSize > 0;
 			if (examineBitstream)
 			{
+				#ifndef NO_QUILL
+				if (!mProbeOnTimer)
+				{
+					LOG_TRACE_L2(mLogger, "[{}] Bitstream probe in frame {} - {} {} Hz (since: {} len: {} burst: {})", mLogPrefix, mFrameCounter,
+						codecNames[newAudioFormat.codec], newAudioFormat.fs, mSinceLast, mBitstreamDetectionWindowLength, mDataBurstSize);
+				}
+				#endif
+
 				CopyToBitstreamBuffer(mFrameBuffer);
 
 				uint16_t bufferSize = mAudioFormat.bitDepthInBytes * MWCAP_AUDIO_SAMPLES_PER_FRAME * mAudioFormat.inputChannelCount;
 				auto res = ParseBitstreamBuffer(bufferSize, &detectedCodec);
 				if (S_OK == res || S_PARTIAL_DATABURST == res)
 				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L2(mLogger, "[{}] Detected bitstream in frame {} {} (res: {})", mLogPrefix, mFrameCounter, codecNames[mDetectedCodec], res);
+					#endif
+
 					mProbeOnTimer = false;
 					if (mDetectedCodec == *detectedCodec)
 					{
