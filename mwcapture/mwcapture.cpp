@@ -2231,11 +2231,11 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 	auto currentChannelMask = audioFormat->channelValidityMask;
 	if (mFilter->GetDeviceType() == USB)
 	{
-		audioFormat->fs = audioIn.signalStatus.dwSampleRate;
+		audioFormat->fs = 48000;
 	}
 	else
 	{
-		audioFormat->fs = 48000;
+		audioFormat->fs = audioIn.signalStatus.dwSampleRate;
 	}
 	audioFormat->bitDepth = audioIn.signalStatus.cBitsPerSample;
 	audioFormat->bitDepthInBytes = audioFormat->bitDepth / 8;
@@ -3510,20 +3510,22 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 		#endif
 	}
 
+	auto lastEndTime = mFrameEndTime;
 	mFilter->GetReferenceTime(&mFrameEndTime);
 	auto endTime = mFrameEndTime - mStreamStartTime;
 	auto startTime = endTime - static_cast<long>(mAudioFormat.sampleInterval * MWCAP_AUDIO_SAMPLES_PER_FRAME);
+	auto sincePrev = endTime - lastEndTime;
 
 	#ifndef NO_QUILL
 	if (bytesCaptured != sampleSize)
 	{
-		LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes (since {}? {})", mLogPrefix,
-			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize, codecNames[mAudioFormat.codec], mSinceCodecChange);
+		LOG_WARNING(mLogger, "[{}] Audio frame {} : samples {} time {} delta {} size {} bytes buf {} bytes (since {}? {})", mLogPrefix,
+			mFrameCounter, samplesCaptured, endTime, sincePrev, bytesCaptured, sampleSize, codecNames[mAudioFormat.codec], mSinceCodecChange);
 	}
 	else
 	{
-		LOG_TRACE_L2(mLogger, "[{}] Audio frame {} : samples {} time {} size {} bytes buf {} bytes (since {}? {})", mLogPrefix,
-			mFrameCounter, samplesCaptured, endTime, bytesCaptured, sampleSize, codecNames[mAudioFormat.codec], mSinceCodecChange);
+		LOG_TRACE_L2(mLogger, "[{}] Audio frame {} : samples {} time {} delta {} size {} bytes buf {} bytes (since {}? {})", mLogPrefix,
+			mFrameCounter, samplesCaptured, endTime, sincePrev, bytesCaptured, sampleSize, codecNames[mAudioFormat.codec], mSinceCodecChange);
 	}
 	#endif
 
