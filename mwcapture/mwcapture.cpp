@@ -49,6 +49,7 @@
 #define BACKOFF Sleep(20)
 #define SHORT_BACKOFF Sleep(1)
 #define S_PARTIAL_DATABURST    ((HRESULT)2L)
+#define S_POSSIBLE_BITSTREAM    ((HRESULT)3L)
 #define S_NO_CHANNELS    ((HRESULT)2L)
 
 constexpr auto bitstreamDetectionWindowSecs = 0.075;
@@ -3510,7 +3511,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 		#endif
 	}
 
-	auto lastEndTime = mFrameEndTime;
+	auto lastEndTime = mFrameEndTime - mStreamStartTime;
 	mFilter->GetReferenceTime(&mFrameEndTime);
 	auto endTime = mFrameEndTime - mStreamStartTime;
 	auto startTime = endTime - static_cast<long>(mAudioFormat.sampleInterval * MWCAP_AUDIO_SAMPLES_PER_FRAME);
@@ -3907,7 +3908,6 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					#ifndef NO_QUILL
 					LOG_TRACE_L2(mLogger, "[{}] Detected bitstream in frame {} {} (res: {})", mLogPrefix, mFrameCounter, codecNames[mDetectedCodec], res);
 					#endif
-
 					mProbeOnTimer = false;
 					if (mDetectedCodec == *detectedCodec)
 					{
@@ -4061,6 +4061,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 	uint16_t bytesRead = 0;
 	bool copiedBytes = false;
 	bool partialDataBurst = false;
+	bool maybeBitstream = false;
 
 	#ifndef NO_QUILL
 	bool foundPause = **codec == PAUSE_OR_NULL;
@@ -4123,6 +4124,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 						LOG_TRACE_L2(mLogger, "[{}] Found PaPb at position {}-{} ({} since last)", mLogPrefix, bytesRead - 4, bytesRead, mBytesSincePaPb);
 					#endif
 					mBytesSincePaPb = 4;
+					maybeBitstream = false;
 					break;
 				}
 			}
@@ -4140,7 +4142,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 				LOG_TRACE_L3(mLogger, "[{}] PaPb {} bytes found", mLogPrefix, mPaPbBytesRead);
 			}
 			#endif
-			copiedBytes = true;
+			maybeBitstream = true;
 			continue;
 		}
 
@@ -4152,10 +4154,8 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 			mPcPdBytesRead += bytesToCopy;
 			bytesRead += bytesToCopy;
 			mBytesSincePaPb += bytesToCopy;
-		}
-
-		if (bytesToCopy)
 			copiedBytes = true;
+		}
 
 		if (mPcPdBytesRead != 4)
 		{
@@ -4208,8 +4208,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 		LOG_TRACE_L3(mLogger, "[{}] Found codec {} with burst size {}", mLogPrefix, codecNames[static_cast<int>(**codec)], mDataBurstSize);
 		#endif
 	}
-	// return S_OK if we added anything to the data burst or we found any byte of the PaPbPcPd preamble
-	return partialDataBurst ? S_PARTIAL_DATABURST : copiedBytes ? S_OK : S_FALSE;
+	return partialDataBurst ? S_PARTIAL_DATABURST : maybeBitstream ? S_POSSIBLE_BITSTREAM : copiedBytes ? S_OK : S_FALSE;
 }
 
 // identifies codecs that are known/expected to be carried via HDMI in an AV setup
