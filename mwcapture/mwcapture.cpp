@@ -60,6 +60,19 @@ constexpr auto chromaticity_scale_factor = 0.00002;
 constexpr auto high_luminance_scale_factor = 1.0;
 constexpr auto low_luminance_scale_factor = 0.0001;
 
+// bit depth -> pixel encoding -> fourcc
+constexpr DWORD fourcc[3][4] = {
+	// RGB444, YUV422, YUV444, YUY420
+	{MWFOURCC_BGR24, MWFOURCC_NV16, MWFOURCC_V308, MWFOURCC_NV12}, // 8  bit
+	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 10 bit
+	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 12 bit
+};
+constexpr std::string fourccName[3][4] = {
+	{"BGR24", "NV16", "V308", "NV12"},
+	{"BGR10", "P210", "AYUV", "P010"},
+	{"BGR10", "P210", "AYUV", "P010"},
+};
+
 constexpr AMOVIESETUP_MEDIATYPE sVideoPinTypes =
 {
 	&MEDIATYPE_Video, // Major type
@@ -1292,26 +1305,10 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 	{
 		videoFormat->colourFormatName = "UNK";
 	}
-	if (videoFormat->pixelEncoding == HDMI_ENCODING_RGB_444)
-	{
-		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_BGR10 : MWFOURCC_BGR24;
-		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "BGR10" : "BGR24";
-	}
-	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_420)
-	{
-		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_P010 : MWFOURCC_NV12;
-		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "P010" : "NV12";
-	}
-	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_422)
-	{
-		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_P210 : MWFOURCC_NV16;
-		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "P210" : "NV16";
-	}
-	else if (videoFormat->pixelEncoding == HDMI_ENCODING_YUV_444)
-	{
-		videoFormat->pixelStructure = videoFormat->bitDepth == 10 ? MWFOURCC_Y410 : MWFOURCC_V308;
-		videoFormat->pixelStructureName = videoFormat->bitDepth == 10 ? "Y410" : "V308";
-	}
+
+	auto idx = videoFormat->bitDepth == 8 ? 0 : videoFormat->bitDepth == 10 ? 1 : 2;
+	videoFormat->pixelStructure = fourcc[idx][videoFormat->pixelEncoding];
+	videoFormat->pixelStructureName = fourccName[idx][videoFormat->pixelEncoding];
 
 	if (captureFormats->usb)
 	{
@@ -1591,7 +1588,7 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 	if (mLastMwResult != MW_SUCCEEDED)
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "MagewellVideoCapturePin::LoadSignal MWGetVideoSignalStatus failed");
+		LOG_WARNING(mLogger, "[{}] LoadSignal MWGetVideoSignalStatus failed", mLogPrefix);
 		#endif
 
 		return S_FALSE;
@@ -1600,7 +1597,7 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 	if (mLastMwResult != MW_SUCCEEDED)
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "MagewellVideoCapturePin::LoadSignal MWGetInputSpecificStatus failed");
+		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus failed", mLogPrefix);
 		#endif
 
 		return S_FALSE;
@@ -1608,7 +1605,7 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 	if (!mVideoSignal.inputStatus.bValid)
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "MagewellVideoCapturePin::LoadSignal MWGetInputSpecificStatus is not valid");
+		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus is invalid", mLogPrefix);
 		#endif
 
 		return S_FALSE;
@@ -1777,7 +1774,7 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			if (FAILED(hr))
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {}]",
+				LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {}]",
 					mLogPrefix, hr);
 				#endif
 
@@ -2067,14 +2064,14 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 	if (mLastMwResult != MW_SUCCEEDED)
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] ERROR! MWGetAudioInputSourceArray", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] MWGetAudioInputSourceArray", mLogPrefix);
 		#endif
 	}
 
 	if (dwInputCount == 0)
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] ERROR! No audio signal detected", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] No audio signal detected", mLogPrefix);
 		#endif
 	}
 	else
@@ -2087,7 +2084,7 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 		else
 		{
 			#ifndef NO_QUILL
-			LOG_ERROR(mLogger, "[{}] ERROR! Unable to load audio signal", mLogPrefix);
+			LOG_ERROR(mLogger, "[{}] Unable to load audio signal", mLogPrefix);
 			#endif
 		}
 	}
@@ -3217,7 +3214,7 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 	if (MW_SUCCEEDED != mLastMwResult)
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] ERROR! MWGetAudioSignalStatus", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetAudioSignalStatus", mLogPrefix);
 		#endif
 		return S_FALSE;
 	}
@@ -3230,13 +3227,13 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 		if (!status.bValid)
 		{
 			#ifndef NO_QUILL
-			LOG_ERROR(mLogger, "[{}] ERROR! MWGetInputSpecificStatus is invalid", mLogPrefix);
+			LOG_ERROR(mLogger, "[{}] MWGetInputSpecificStatus is invalid", mLogPrefix);
 			#endif
 		}
 		else if (status.dwVideoInputType != MWCAP_VIDEO_INPUT_TYPE_HDMI) 
 		{
 			#ifndef NO_QUILL
-			LOG_ERROR(mLogger, "[{}] ERROR! Video input type is not HDMI {}", mLogPrefix, status.dwVideoInputType);
+			LOG_ERROR(mLogger, "[{}] Video input type is not HDMI {}", mLogPrefix, status.dwVideoInputType);
 			#endif
 		}
 		else if (MW_SUCCEEDED != MWGetHDMIInfoFrameValidFlag(*hChannel, &tPdwValidFlag))
@@ -3263,7 +3260,7 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 	else
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] ERROR! MWGetInputSpecificStatus", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus", mLogPrefix);
 		#endif
 		return S_FALSE;
 	}
@@ -3271,7 +3268,7 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 	if (mAudioSignal.signalStatus.wChannelValid == 0)
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] ERROR! No valid audio channels detected {}", mLogPrefix,
+		LOG_TRACE_L1(mLogger, "[{}] No valid audio channels detected {}", mLogPrefix,
 			mAudioSignal.signalStatus.wChannelValid);
 		#endif
 		return S_NO_CHANNELS;
@@ -3478,7 +3475,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 							else
 							{
 								#ifndef NO_QUILL
-								LOG_ERROR(mLogger, "[{}] ERROR! Skipping L byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
+								LOG_ERROR(mLogger, "[{}] Skipping L byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
 								#endif
 							}
 						}
@@ -3494,7 +3491,7 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 							else
 							{
 								#ifndef NO_QUILL
-								LOG_ERROR(mLogger, "[{}] ERROR! Skipping R byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
+								LOG_ERROR(mLogger, "[{}] Skipping R byte {} when sample should only be {} bytes long", mLogPrefix, outIdx, sampleSize);
 								#endif
 
 							}
@@ -3892,7 +3889,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			if (examineBitstream)
 			{
 				#ifndef NO_QUILL
-				if (!mProbeOnTimer)
+				if (!mProbeOnTimer && newAudioFormat.codec == PCM)
 				{
 					LOG_TRACE_L2(mLogger, "[{}] Bitstream probe in frame {} - {} {} Hz (since: {} len: {} burst: {})", mLogPrefix, mFrameCounter,
 						codecNames[newAudioFormat.codec], newAudioFormat.fs, mSinceLast, mBitstreamDetectionWindowLength, mDataBurstSize);
@@ -4205,7 +4202,7 @@ HRESULT MagewellAudioCapturePin::ParseBitstreamBuffer(uint16_t bufSize, enum Cod
 
 		mPaPbBytesRead = mPcPdBytesRead = 0;
 		#ifndef NO_QUILL
-		LOG_TRACE_L3(mLogger, "[{}] Found codec {} with burst size {}", mLogPrefix, codecNames[static_cast<int>(**codec)], mDataBurstSize);
+		LOG_TRACE_L2(mLogger, "[{}] Found codec {} with burst size {}", mLogPrefix, codecNames[static_cast<int>(**codec)], mDataBurstSize);
 		#endif
 	}
 	return partialDataBurst ? S_PARTIAL_DATABURST : maybeBitstream ? S_POSSIBLE_BITSTREAM : copiedBytes ? S_OK : S_FALSE;
