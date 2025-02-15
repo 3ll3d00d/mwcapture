@@ -515,7 +515,7 @@ HRESULT MagewellCapturePin::OnThreadStartPlay()
 	}
 	else
 	{
-		LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, stream started at ", mLogPrefix, rt,
+		LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, stream started at {}", mLogPrefix, rt,
 			mStreamStartTime);
 	}
 	#endif
@@ -565,7 +565,7 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 			if (FAILED(hrBuf) || hrBuf == S_FALSE)
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] Failed to GetDeliveryBuffer ({}), retrying", mLogPrefix, hrBuf);
+				LOG_WARNING(mLogger, "[{}] Failed to GetDeliveryBuffer ({:#08x}), retrying", mLogPrefix, hrBuf);
 				#endif
 				SHORT_BACKOFF;
 				continue;
@@ -581,7 +581,7 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 				if (hr != S_OK)
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] Failed to deliver sample downstream ({}), process loop will exit", mLogPrefix, hr);
+					LOG_WARNING(mLogger, "[{}] Failed to deliver sample downstream ({:#08x}), process loop will exit", mLogPrefix, hr);
 					#endif
 
 					return S_OK;
@@ -598,7 +598,7 @@ HRESULT MagewellCapturePin::DoBufferProcessingLoop(void) {
 			else
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] FillBuffer failed ({}), sending EOS and EC_ERRORABORT", mLogPrefix, hr);
+				LOG_WARNING(mLogger, "[{}] FillBuffer failed ({:#08x}), sending EOS and EC_ERRORABORT", mLogPrefix, hr);
 				#endif
 
 				pSample->Release();
@@ -725,7 +725,7 @@ HRESULT MagewellCapturePin::SetMediaType(const CMediaType* pmt)
 	HRESULT hr = CSourceStream::SetMediaType(pmt);
 
 	#ifndef NO_QUILL
-	LOG_TRACE_L3(mLogger, "[{}] SetMediaType (res: {})", mLogPrefix, hr);
+	LOG_TRACE_L3(mLogger, "[{}] SetMediaType (res: {:#08x})", mLogPrefix, hr);
 	#endif
 
 	return hr;
@@ -750,7 +750,7 @@ HRESULT MagewellCapturePin::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATO
 	if (FAILED(hr))
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] MagewellCapturePin::DecideBufferSize failed to SetProperties result {}", mLogPrefix,
+		LOG_WARNING(mLogger, "[{}] MagewellCapturePin::DecideBufferSize failed to SetProperties result {:#08x}", mLogPrefix,
 			hr);
 		#endif
 
@@ -912,7 +912,7 @@ receiveconnection:
 					else
 					{
 						#ifndef NO_QUILL
-						LOG_WARNING(mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers [{}]",
+						LOG_WARNING(mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers [{:#08x}]",
 							mLogPrefix, props.cbBuffer, props.cBuffers, hr);
 						#endif
 					}
@@ -920,7 +920,7 @@ receiveconnection:
 				else
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] Allocator did not commit update to {} bytes {} buffers [{}]",
+					LOG_WARNING(mLogger, "[{}] Allocator did not commit update to {} bytes {} buffers [{:#08x}]",
 						mLogPrefix, props.cbBuffer, props.cBuffers, hr);
 					#endif
 				}
@@ -931,7 +931,7 @@ receiveconnection:
 	{
 		#ifndef NO_QUILL
 		LOG_WARNING(
-			mLogger, "[{}] MagewellCapturePin::NegotiateMediaType Receive Connection failed (hr: {}); QueryAccept: {}",
+			mLogger, "[{}] MagewellCapturePin::NegotiateMediaType Receive Connection failed (hr: {:#08x}); QueryAccept: {:#08x}",
 			mLogPrefix, hr, hrQA);
 		#endif
 	}
@@ -947,7 +947,7 @@ receiveconnection:
 	{
 		// reinstate the old formats otherwise we're stuck thinking we have the new format
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::NegotiateMediaType failed {}", mLogPrefix, retVal);
+		LOG_TRACE_L1(mLogger, "[{}] MagewellCapturePin::NegotiateMediaType failed {:#08x}", mLogPrefix, retVal);
 		#endif
 
 		SetMediaType(&oldMediaType);
@@ -1574,8 +1574,10 @@ bool MagewellVideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video transfer function change {} to {}", mLogPrefix,
-			mVideoFormat.hdrMeta.transferFunction, incomingTransferFunction);
+		auto formatFrom = mVideoFormat.hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+		auto formatTo = incomingTransferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+		LOG_INFO(mLogger, "[{}] Video transfer function change {} ({}) to {} ({})", mLogPrefix,
+			formatFrom, mVideoFormat.hdrMeta.transferFunction, formatTo, incomingTransferFunction);
 		#endif
 	}
 
@@ -1694,7 +1696,7 @@ void MagewellVideoCapturePin::CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u6
 	{
 		auto err  = GetLastError();
 		#ifndef NO_QUILL
-		LOG_ERROR(pin->mLogger, "[{}] Failed to notify on frame {}", pin->mLogPrefix, err);
+		LOG_ERROR(pin->mLogger, "[{}] Failed to notify on frame {:#08x}", pin->mLogPrefix, err);
 		#endif
 	}
 }
@@ -1774,7 +1776,7 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			if (FAILED(hr))
 			{
 				#ifndef NO_QUILL
-				LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {}]",
+				LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {:#08x}]",
 					mLogPrefix, hr);
 				#endif
 
@@ -3352,7 +3354,7 @@ void MagewellAudioCapturePin::CaptureFrame(const BYTE* pbFrame, int cbFrame, UIN
 	{
 		auto err = GetLastError();
 		#ifndef NO_QUILL
-		LOG_ERROR(pin->mLogger, "[{}] Failed to notify on frame {}", pin->mLogPrefix, err);
+		LOG_ERROR(pin->mLogger, "[{}] Failed to notify on frame {:#08x}", pin->mLogPrefix, err);
 		#endif
 	}
 }
@@ -3903,7 +3905,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				if (S_OK == res || S_PARTIAL_DATABURST == res)
 				{
 					#ifndef NO_QUILL
-					LOG_TRACE_L2(mLogger, "[{}] Detected bitstream in frame {} {} (res: {})", mLogPrefix, mFrameCounter, codecNames[mDetectedCodec], res);
+					LOG_TRACE_L2(mLogger, "[{}] Detected bitstream in frame {} {} (res: {:#08x})", mLogPrefix, mFrameCounter, codecNames[mDetectedCodec], res);
 					#endif
 					mProbeOnTimer = false;
 					if (mDetectedCodec == *detectedCodec)
@@ -3991,7 +3993,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				if (FAILED(hr))
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({}) retry after backoff", mLogPrefix, hr);
+					LOG_WARNING(mLogger, "[{}] AudioFormat changed but not able to reconnect ({:#08x}) retry after backoff", mLogPrefix, hr);
 					#endif
 
 					// TODO communicate that we need to change somehow
