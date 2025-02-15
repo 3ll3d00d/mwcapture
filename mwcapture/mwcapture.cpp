@@ -67,7 +67,7 @@ constexpr DWORD fourcc[3][4] = {
 	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 10 bit
 	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 12 bit
 };
-constexpr std::string fourccName[3][4] = {
+constexpr std::string_view fourccName[3][4] = {
 	{"BGR24", "NV16", "V308", "NV12"},
 	{"BGR10", "P210", "AYUV", "P010"},
 	{"BGR10", "P210", "AYUV", "P010"},
@@ -1040,21 +1040,37 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 	auto retVal = S_OK;
 	auto hasFrame = false;
 	auto proDevice = deviceType == PRO;
-	while (!hasFrame)
+	auto attempts = 0;
+	auto mustExit = false;
+	while (!hasFrame && !mustExit)
 	{
 		if (proDevice)
 		{
 			pin->mLastMwResult = MWGetVideoBufferInfo(hChannel, &pin->mVideoSignal.bufferInfo);
-			if (pin->mLastMwResult != MW_SUCCEEDED) continue;
+			if (pin->mLastMwResult != MW_SUCCEEDED)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(pin->mLogger, "[{}] Can't get VideoBufferInfo ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
+				#endif
+
+				continue;
+			}
 
 			pin->mLastMwResult = MWGetVideoFrameInfo(hChannel, pin->mVideoSignal.bufferInfo.iNewestBuffered,
 				&pin->mVideoSignal.frameInfo);
-			if (pin->mLastMwResult != MW_SUCCEEDED) continue;
+			if (pin->mLastMwResult != MW_SUCCEEDED)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(pin->mLogger, "[{}] Can't get VideoFeameInfo ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
+				#endif
+
+				continue;
+			}
 
 			// capture a frame to the framebuffer
 			pin->mLastMwResult = MWCaptureVideoFrameToVirtualAddressEx(
 				hChannel,
-				pin->mVideoSignal.bufferInfo.iNewestBuffering,
+				pin->mHasSignal ? pin->mVideoSignal.bufferInfo.iNewestBuffering : MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERED,
 				pmsData,
 				pin->mVideoFormat.imageSize,
 				pin->mVideoFormat.lineLength,
@@ -1087,15 +1103,46 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				DWORD dwRet = WaitForSingleObject(pin->mCaptureEvent, 1000);
 				if (dwRet != WAIT_OBJECT_0)
 				{
-					if (pin->CheckStreamState(nullptr) == STREAM_DISCARDING)
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(pin->mLogger, "[{}] Unexpected capture event ({:#08x})", pin->mLogPrefix, dwRet);
+					#endif
+
+					if (dwRet == STATUS_TIMEOUT)
 					{
+						#ifndef NO_QUILL
+						LOG_TRACE_L1(pin->mLogger, "[{}] Wait for frame has timed out", pin->mLogPrefix);
+						#endif
+						mustExit = true;
 						break;
 					}
+
+					if (pin->CheckStreamState(nullptr) == STREAM_DISCARDING)
+					{
+						mustExit = true;
+						break;
+					}
+
 					continue;
 				}
 				pin->mLastMwResult = MWGetVideoCaptureStatus(hChannel, &pin->mVideoSignal.captureStatus);
 
+				#ifndef NO_QUILL
+				if (pin->mLastMwResult != MW_SUCCEEDED)
+				{
+					LOG_TRACE_L1(pin->mLogger, "[{}] MWGetVideoCaptureStatus failed ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
+				}
+				#endif
+
 				hasFrame = pin->mVideoSignal.captureStatus.bFrameCompleted;
+
+				if (!pin->mHasSignal && ++attempts >= 10)
+				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(pin->mLogger, "[{}] Wait for no signal frame has timed out", pin->mLogPrefix);
+					#endif
+					mustExit = true;
+					break;
+				}
 			} while (pin->mLastMwResult == MW_SUCCEEDED && !hasFrame);
 		}
 		else
@@ -1178,6 +1225,12 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				pMediaSideData->Release();
 			}
 		}
+	}
+	else
+	{
+		#ifndef NO_QUILL
+		LOG_TRACE_L1(pin->mLogger, "[{}] No frame loaded", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
+		#endif
 	}
 	return retVal;
 }
@@ -1731,14 +1784,17 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		}
 		auto channel = mFilter->GetChannelHandle();
 		auto hr = LoadSignal(&channel);
+		mHasSignal = true;
+
 		if (FAILED(hr))
 		{
 			#ifndef NO_QUILL
 			LOG_WARNING(mLogger, "[{}] Can't load signal, retry after backoff", mLogPrefix);
 			#endif
 
-			BACKOFF;
-			continue;
+			// BACKOFF;
+			// continue;
+			mHasSignal = false;
 		}
 		if (mVideoSignal.signalStatus.state != MWCAP_VIDEO_SIGNAL_LOCKED)
 		{
@@ -1747,8 +1803,9 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				static_cast<int>(mVideoSignal.signalStatus.state));
 			#endif
 
-			BACKOFF;
-			continue;
+			// BACKOFF;
+			// continue;
+			mHasSignal = false;
 		}
 		if (mVideoSignal.inputStatus.hdmiStatus.byBitDepth == 0)
 		{
@@ -1756,33 +1813,37 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0, retry after backoff", mLogPrefix);
 			#endif
 
-			BACKOFF;
-			continue;
+			// BACKOFF;
+			// continue;
+			mHasSignal = false;
 		}
 
-		VIDEO_FORMAT newVideoFormat{};
-		LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
-
-		if (ShouldChangeMediaType(&newVideoFormat))
+		if (mHasSignal)
 		{
-			#ifndef NO_QUILL
-			LOG_WARNING(mLogger, "[{}] VideoFormat changed! Attempting to reconnect", mLogPrefix);
-			#endif
+			VIDEO_FORMAT newVideoFormat{};
+			LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
 
-			CMediaType proposedMediaType(m_mt);
-			VideoFormatToMediaType(&proposedMediaType, &newVideoFormat);
-
-			hr = DoChangeMediaType(&proposedMediaType, &newVideoFormat);
-			if (FAILED(hr))
+			if (ShouldChangeMediaType(&newVideoFormat))
 			{
 				#ifndef NO_QUILL
-				LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {:#08x}]",
-					mLogPrefix, hr);
+				LOG_WARNING(mLogger, "[{}] VideoFormat changed! Attempting to reconnect", mLogPrefix);
 				#endif
 
-				// TODO show OSD to say we need to change
-				BACKOFF;
-				continue;
+				CMediaType proposedMediaType(m_mt);
+				VideoFormatToMediaType(&proposedMediaType, &newVideoFormat);
+
+				hr = DoChangeMediaType(&proposedMediaType, &newVideoFormat);
+				if (FAILED(hr))
+				{
+					#ifndef NO_QUILL
+					LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {:#08x}]",
+						mLogPrefix, hr);
+					#endif
+
+					// TODO show OSD to say we need to change
+					BACKOFF;
+					continue;
+				}
 			}
 		}
 
@@ -1804,7 +1865,14 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			{
 				// wait til we see a BUFFERING notification
 				mLastMwResult = MWGetNotifyStatus(hChannel, mNotify, &mStatusBits);
-				if (mLastMwResult != MW_SUCCEEDED) continue;
+				if (mLastMwResult != MW_SUCCEEDED) {
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(mLogger, "[{}] MWGetNotifyStatus failed {}", mLogPrefix, static_cast<int>(mLastMwResult));
+					#endif
+
+					BACKOFF;
+					continue;
+				}
 
 				if (mStatusBits & MWCAP_NOTIFY_VIDEO_SIGNAL_CHANGE)
 				{
@@ -1829,6 +1897,15 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				{
 					hasFrame = true;
 				}
+
+				if (!mHasSignal)
+				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(mLogger, "[{}] No signal will be displayed ", mLogPrefix);
+					#endif
+
+					hasFrame = true;
+				}
 			}
 			else
 			{
@@ -1849,6 +1926,33 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			}
 
 			if (!hasFrame) SHORT_BACKOFF;
+		}
+		else
+		{
+			if (!mHasSignal && dwRet == STATUS_TIMEOUT)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogger, "[{}] Timeout and no signal, get delivery buffer for no signal image", mLogPrefix);
+				#endif
+				retVal = MagewellCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
+				if (!SUCCEEDED(retVal))
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogger, "[{}] Unable to get delivery buffer, retry after backoff", mLogPrefix);
+					#endif
+					SHORT_BACKOFF;
+				}
+				else
+				{
+					hasFrame = true;
+				}
+			}
+			else
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogger, "[{}] Wait for frame unexpected response ({:#08x})", mLogPrefix, dwRet);
+				#endif
+			}
 		}
 	}
 	return retVal;

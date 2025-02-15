@@ -416,6 +416,7 @@ protected:
     MW_RESULT mLastMwResult;
     boolean mLastSampleDiscarded;
     boolean mSendMediaType;
+    boolean mHasSignal;
     // per frame
     LONGLONG mFrameEndTime;
     // pro only
