@@ -1226,13 +1226,13 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				pMediaSideData->Release();
 
 				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: R {:.3f} {:.3f}", pin->mLogPrefix,
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: R {:.4f} {:.4f}", pin->mLogPrefix,
 					hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: G {:.3f} {:.3f}", pin->mLogPrefix,
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: G {:.4f} {:.4f}", pin->mLogPrefix,
 					hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: B {:.3f} {:.3f}", pin->mLogPrefix,
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: B {:.4f} {:.4f}", pin->mLogPrefix,
 					hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: WP {:.3f} {:.3f}", pin->mLogPrefix,
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: W {:.4f} {:.4f}", pin->mLogPrefix,
 					hdr.white_point_x, hdr.white_point_y);
 				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: DML {} {}", pin->mLogPrefix,
 					hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
