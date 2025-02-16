@@ -29,7 +29,6 @@
 #include <windows.h>
 #include <process.h>
 #include <DXVA.h>
-#include <streams.h>
 #include <filesystem>
 #include <utility>
  // linking side data GUIDs fails without this
@@ -133,7 +132,6 @@ CFactoryTemplate g_Templates[] = {
 };
 
 int g_cTemplates{ 1 };
-
 
 //////////////////////////////////////////////////////////////////////////
 // MagewellCaptureFilter
@@ -1512,79 +1510,6 @@ void MagewellVideoCapturePin::LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat)
 		LOG_TRACE_L1(mLogger, "[{}] HDR metadata has been removed", mLogPrefix);
 		#endif
 	}
-}
-
-void MagewellVideoCapturePin::LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame)
-{
-	auto hdrIn = *frame;
-	auto hdrOut = meta;
-
-	// https://shop.cta.tech/products/hdr-static-metadata-extensions
-	// hdrInfo.byEOTF : 0 = SDR gamma, 1 = HDR gamma, 2 = ST2084
-	int primaries_x[] = {
-		hdrIn.display_primaries_lsb_x0 + (hdrIn.display_primaries_msb_x0 << 8),
-		hdrIn.display_primaries_lsb_x1 + (hdrIn.display_primaries_msb_x1 << 8),
-		hdrIn.display_primaries_lsb_x2 + (hdrIn.display_primaries_msb_x2 << 8)
-	};
-	int primaries_y[] = {
-		hdrIn.display_primaries_lsb_y0 + (hdrIn.display_primaries_msb_y0 << 8),
-		hdrIn.display_primaries_lsb_y1 + (hdrIn.display_primaries_msb_y1 << 8),
-		hdrIn.display_primaries_lsb_y2 + (hdrIn.display_primaries_msb_y2 << 8)
-	};
-	// red = largest x, green = largest y, blue = remaining 
-	auto r_idx = 0;
-	auto maxVal = primaries_x[0];
-	for (int i = 1; i < 3; ++i)
-	{
-		if (primaries_x[i] > maxVal)
-		{
-			maxVal = primaries_x[i];
-			r_idx = i;
-		}
-	}
-
-	auto g_idx = 0;
-	maxVal = primaries_y[0];
-	for (int i = 1; i < 3; ++i)
-	{
-		if (primaries_y[i] > maxVal)
-		{
-			maxVal = primaries_y[i];
-			g_idx = i;
-		}
-	}
-
-	if (g_idx != r_idx)
-	{
-		auto b_idx = 3 - g_idx - r_idx;
-		if (b_idx != g_idx && b_idx != r_idx)
-		{
-			hdrOut->r_primary_x = primaries_x[r_idx];
-			hdrOut->r_primary_y = primaries_y[r_idx];
-			hdrOut->g_primary_x = primaries_x[g_idx];
-			hdrOut->g_primary_y = primaries_y[g_idx];
-			hdrOut->b_primary_x = primaries_x[b_idx];
-			hdrOut->b_primary_y = primaries_y[b_idx];
-		}
-	}
-
-	hdrOut->whitepoint_x = hdrIn.white_point_lsb_x + (hdrIn.white_point_msb_x << 8);
-	hdrOut->whitepoint_y = hdrIn.white_point_lsb_y + (hdrIn.white_point_msb_y << 8);
-
-	hdrOut->maxDML = hdrIn.max_display_mastering_lsb_luminance + (hdrIn.max_display_mastering_msb_luminance << 8);
-	hdrOut->minDML = hdrIn.min_display_mastering_lsb_luminance + (hdrIn.min_display_mastering_msb_luminance << 8);
-
-	hdrOut->maxCLL = hdrIn.maximum_content_light_level_lsb + (hdrIn.maximum_content_light_level_msb << 8);
-	hdrOut->maxFALL = hdrIn.maximum_frame_average_light_level_lsb + (hdrIn.maximum_frame_average_light_level_msb << 8);
-
-	hdrOut->transferFunction = hdrIn.byEOTF == 0x2 ? 15 : 4;
-
-	hdrOut->exists = hdrOut->r_primary_x && hdrOut->r_primary_y
-		&& hdrOut->g_primary_x && hdrOut->g_primary_y
-		&& hdrOut->b_primary_x && hdrOut->b_primary_y
-		&& hdrOut->whitepoint_x && hdrOut->whitepoint_y
-		&& hdrOut->minDML && hdrOut->maxDML
-		&& hdrOut->maxCLL && hdrOut->maxFALL;
 }
 
 void MagewellVideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const

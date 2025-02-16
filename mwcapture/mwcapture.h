@@ -38,6 +38,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #endif // !NO_QUILL
 
 #include <string>
+#include <streams.h>
 #include <windows.h>
 #include <source.h>
 #include <dvdmedia.h>
@@ -45,6 +46,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include <wmcodecdsp.h>
 
 #include "LibMWCapture/MWCapture.h"
+#include "util.h"
 
 // HDMI Audio Bitstream Codec Identification metadata
 
@@ -108,24 +110,6 @@ EXTERN_C const GUID MEDIASUBTYPE_PCM_IN24;
 EXTERN_C const GUID MEDIASUBTYPE_PCM_IN32;
 EXTERN_C const GUID MEDIASUBTYPE_PCM_SOWT;
 EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
-
-struct HDR_META 
-{
-    bool exists{ false };
-    int r_primary_x{ 0 };
-    int r_primary_y{ 0 };
-    int g_primary_x{ 0 };
-    int g_primary_y{ 0 };
-    int b_primary_x{ 0 };
-    int b_primary_y{ 0 };
-    int whitepoint_x{ 0 };
-    int whitepoint_y{ 0 };
-    int minDML{ 0 };
-    int maxDML{ 0 };
-    int maxCLL{ 0 };
-    int maxFALL{ 0 };
-    int transferFunction{ 4 };
-};
 
 struct USB_CAPTURE_FORMATS
 {
@@ -499,7 +483,6 @@ protected:
     CAPTURED_FRAME mCapturedFrame{};
 
     static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal, USB_CAPTURE_FORMATS* captureFormats);
-    static void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame);
     // USB only
     static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
