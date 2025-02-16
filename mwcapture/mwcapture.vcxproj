@@ -259,7 +259,7 @@
       </PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
       <PrecompiledHeaderOutputFile />
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>false</MultiProcessorCompilation>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
@@ -288,7 +288,7 @@
       <PrecompiledHeaderOutputFile />
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>Default</LanguageStandard_C>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -318,7 +318,7 @@
       </PrecompiledHeaderOutputFile>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>Default</LanguageStandard_C>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -348,7 +348,7 @@
       </PrecompiledHeaderOutputFile>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <LanguageStandard_C>Default</LanguageStandard_C>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>

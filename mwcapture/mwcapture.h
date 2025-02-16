@@ -101,6 +101,7 @@ static const std::string codecNames[8] = {
 };
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
 constexpr int maxFrameLengthInBytes = MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes;
+constexpr LONGLONG oneSecondIn100ns = 10000000L;
 
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
 EXTERN_C const GUID MEDIASUBTYPE_PCM_IN24;
@@ -417,6 +418,7 @@ protected:
     boolean mLastSampleDiscarded;
     boolean mSendMediaType;
     boolean mHasSignal;
+    LONGLONG mLastSentHdrMetaAt;
     // per frame
     LONGLONG mFrameEndTime;
     // pro only
@@ -427,7 +429,7 @@ protected:
 /**
  * A video stream flowing from the capture device to an output pin.
  */
-class MagewellVideoCapturePin final :
+class MagewellVideoCapturePin :
     public MagewellCapturePin
 {
 public:
@@ -501,7 +503,8 @@ protected:
     // USB only
     static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
-	void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
+    void LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat);
+    void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
     bool ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat);
     HRESULT LoadSignal(HCHANNEL* pChannel);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);

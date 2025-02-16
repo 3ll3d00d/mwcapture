@@ -1175,17 +1175,18 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 			pin->mSendMediaType = FALSE;
 		}
 		// Update once per second
-		if (pin->mVideoFormat.hdrMeta.exists && (pin->mFrameCounter % pin->mVideoFormat.fps) == 0)
+		if (pin->mVideoFormat.hdrMeta.exists && (endTime > pin->mLastSentHdrMetaAt + oneSecondIn100ns)) 
 		{
-			#ifndef NO_QUILL
-			LOG_TRACE_L1(pin->mLogger, "[{}] Updating HDR meta in frame {}", pin->mLogPrefix,
-				pin->mFrameCounter);
-			#endif
-
 			// This can fail if you have a filter behind this which does not understand side data
 			IMediaSideData* pMediaSideData = nullptr;
 			if (SUCCEEDED(pms->QueryInterface(&pMediaSideData)))
 			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(pin->mLogger, "[{}] Updating HDR meta in frame {}, last update at {}", pin->mLogPrefix,
+					pin->mFrameCounter, pin->mLastSentHdrMetaAt);
+				#endif
+
+				pin->mLastSentHdrMetaAt = endTime;
 				MediaSideDataHDR hdr;
 				ZeroMemory(&hdr, sizeof(hdr));
 
@@ -1223,6 +1224,27 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 					reinterpret_cast<const BYTE*>(&hdrLightLevel),
 					sizeof(hdrLightLevel));
 				pMediaSideData->Release();
+
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: R {:.3f} {:.3f}", pin->mLogPrefix,
+					hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: G {:.3f} {:.3f}", pin->mLogPrefix,
+					hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: B {:.3f} {:.3f}", pin->mLogPrefix,
+					hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: WP {:.3f} {:.3f}", pin->mLogPrefix,
+					hdr.white_point_x, hdr.white_point_y);
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: DML {} {}", pin->mLogPrefix,
+					hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
+				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", pin->mLogPrefix,
+					hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
+				#endif
+			}
+			else
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(pin->mLogger, "[{}] HDR meta to send via MediaSideDataHDR but not supported by MediaSample", pin->mLogPrefix);
+				#endif
 			}
 		}
 	}
@@ -1414,6 +1436,84 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 	videoFormat->imageSize = FOURCC_CalcImageSize(videoFormat->pixelStructure, videoFormat->cx, videoFormat->cy, videoFormat->lineLength);
 }
 
+void MagewellVideoCapturePin::LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat)
+{
+	auto hdrIf = mVideoSignal.hdrInfo;
+	if (hdrIf.byEOTF || hdrIf.byMetadataDescriptorID 
+		|| hdrIf.display_primaries_lsb_x0 || hdrIf.display_primaries_lsb_x1 || hdrIf.display_primaries_lsb_x2 
+		|| hdrIf.display_primaries_msb_x0 || hdrIf.display_primaries_msb_x1 || hdrIf.display_primaries_msb_x2
+		|| hdrIf.display_primaries_lsb_y0 || hdrIf.display_primaries_lsb_y1 || hdrIf.display_primaries_lsb_y2 
+		|| hdrIf.display_primaries_msb_y0 || hdrIf.display_primaries_msb_y1 || hdrIf.display_primaries_msb_y2
+		|| hdrIf.white_point_msb_x || hdrIf.white_point_msb_y || hdrIf.white_point_lsb_x || hdrIf.white_point_lsb_y
+		|| hdrIf.max_display_mastering_lsb_luminance || hdrIf.max_display_mastering_msb_luminance
+		|| hdrIf.min_display_mastering_lsb_luminance || hdrIf.min_display_mastering_msb_luminance
+		|| hdrIf.maximum_content_light_level_lsb|| hdrIf.maximum_content_light_level_msb
+		|| hdrIf.maximum_frame_average_light_level_lsb || hdrIf.maximum_frame_average_light_level_msb)
+	{
+		auto newMeta = newVideoFormat->hdrMeta;
+		auto oldMeta = mVideoFormat.hdrMeta;
+		if (newMeta.exists)
+		{
+			bool logPrimaries;
+			bool logWp;
+			bool logMax;
+			if (oldMeta.exists)
+			{
+				logPrimaries = newMeta.r_primary_x != oldMeta.r_primary_x || newMeta.r_primary_y != oldMeta.r_primary_y
+					|| newMeta.g_primary_x != oldMeta.g_primary_x || newMeta.g_primary_y != oldMeta.g_primary_y
+					|| newMeta.b_primary_x != oldMeta.b_primary_x || newMeta.b_primary_y != oldMeta.b_primary_y;
+				logWp = newMeta.whitepoint_x != oldMeta.whitepoint_x || newMeta.whitepoint_y != oldMeta.whitepoint_y;
+				logMax = newMeta.maxCLL != oldMeta.maxCLL || newMeta.minDML != oldMeta.minDML || newMeta.maxDML != oldMeta.maxDML || newMeta.maxFALL != oldMeta.maxFALL;
+				if (logPrimaries || logWp || logMax)
+				{
+					#ifndef NO_QUILL
+					LOG_INFO(mLogger, "[{}] HDR metadata has changed", mLogPrefix);
+					#endif
+				}
+			}
+			else
+			{
+				logPrimaries = true;
+				logWp = true;
+				logMax = true;
+				#ifndef NO_QUILL
+				LOG_INFO(mLogger, "[{}] HDR metadata is now present", mLogPrefix);
+				#endif
+			}
+
+			#ifndef NO_QUILL
+			if (logPrimaries)
+			{
+				LOG_INFO(mLogger, "[{}] Primaries RGB {} x {} {} x {} {} x {}", mLogPrefix,
+					newMeta.r_primary_x, newMeta.r_primary_y, newMeta.g_primary_x, newMeta.g_primary_y, newMeta.b_primary_x, newMeta.b_primary_y);
+			}
+			if (logWp)
+			{
+				LOG_INFO(mLogger, "[{}] Whitepoint {} x {}", mLogPrefix,
+					newMeta.whitepoint_x, newMeta.whitepoint_y);
+			}
+			if (logMax)
+			{
+				LOG_INFO(mLogger, "[{}] DML/MaxCLL/MaxFALL {} / {} {} {}", mLogPrefix,
+					newMeta.minDML, newMeta.maxDML, newMeta.maxCLL, newMeta.maxFALL);
+			}
+			#endif
+		}
+		else
+		{
+			#ifndef NO_QUILL
+			LOG_WARNING(mLogger, "[{}] HDR InfoFrame parsing failure, values are present but no metadata exists", mLogPrefix);
+			#endif
+		}
+	}
+	if (!newVideoFormat->hdrMeta.exists && mVideoFormat.hdrMeta.exists)
+	{
+		#ifndef NO_QUILL
+		LOG_TRACE_L1(mLogger, "[{}] HDR metadata has been removed", mLogPrefix);
+		#endif
+	}
+}
+
 void MagewellVideoCapturePin::LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame)
 {
 	auto hdrIn = *frame;
@@ -1432,7 +1532,7 @@ void MagewellVideoCapturePin::LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAY
 		hdrIn.display_primaries_lsb_y2 + (hdrIn.display_primaries_msb_y2 << 8)
 	};
 	// red = largest x, green = largest y, blue = remaining 
-	auto r_idx = -1;
+	auto r_idx = 0;
 	auto maxVal = primaries_x[0];
 	for (int i = 1; i < 3; ++i)
 	{
@@ -1443,7 +1543,7 @@ void MagewellVideoCapturePin::LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAY
 		}
 	}
 
-	auto g_idx = -1;
+	auto g_idx = 0;
 	maxVal = primaries_y[0];
 	for (int i = 1; i < 3; ++i)
 	{
@@ -1454,7 +1554,7 @@ void MagewellVideoCapturePin::LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAY
 		}
 	}
 
-	if (g_idx > -1 && r_idx > -1 && g_idx != r_idx)
+	if (g_idx != r_idx)
 	{
 		auto b_idx = 3 - g_idx - r_idx;
 		if (b_idx != g_idx && b_idx != r_idx)
@@ -1678,9 +1778,9 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 			LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF,
 				pkt.hdrInfoFramePayload.byEOTF);
 			#endif
+			mHasHdrInfoFrame = true;
 		}
 		mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
-		mHasHdrInfoFrame = true;
 	}
 	else
 	{
@@ -1689,8 +1789,8 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 			#ifndef NO_QUILL
 			LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe no longer present", mLogPrefix);
 			#endif
+			mHasHdrInfoFrame = false;
 		}
-		mHasHdrInfoFrame = false;
 		mVideoSignal.hdrInfo = {};
 	}
 	if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AVI)
@@ -1822,6 +1922,10 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		{
 			VIDEO_FORMAT newVideoFormat{};
 			LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
+
+			#ifndef NO_QUILL
+			LogHdrMetaIfPresent(&newVideoFormat);
+			#endif
 
 			if (ShouldChangeMediaType(&newVideoFormat))
 			{
