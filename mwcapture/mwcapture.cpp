@@ -1068,7 +1068,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 			// capture a frame to the framebuffer
 			pin->mLastMwResult = MWCaptureVideoFrameToVirtualAddressEx(
 				hChannel,
-				pin->mHasSignal ? pin->mVideoSignal.bufferInfo.iNewestBuffering : MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERED,
+				pin->mHasSignal ? pin->mVideoSignal.bufferInfo.iNewestBuffering : MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERING,
 				pmsData,
 				pin->mVideoFormat.imageSize,
 				pin->mVideoFormat.lineLength,
