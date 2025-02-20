@@ -47,7 +47,7 @@ jobs:
     - name: Setup vcpkg
       uses: lukka/run-vcpkg@v11
       with:
-        vcpkgJsonGlob: 'mwcapture/vcpkg.json'      
+        vcpkgJsonGlob: '**/vcpkg.json'      
 
     - name: vcpkg integrate 
       run: vcpkg integrate install
