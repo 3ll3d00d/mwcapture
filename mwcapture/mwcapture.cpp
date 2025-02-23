@@ -1099,6 +1099,14 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				pin->mVideoFormat.quantization,
 				pin->mVideoFormat.saturation
 			);
+			if (pin->mLastMwResult != MW_SUCCEEDED)
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(pin->mLogger, "[{}] Unexpected failed call to MWCaptureVideoFrameToVirtualAddressEx ({})", pin->mLogPrefix, 
+					static_cast<int>(pin->mLastMwResult));
+				#endif
+				break;
+			}
 			do
 			{
 				DWORD dwRet = WaitForSingleObject(pin->mCaptureEvent, 1000);
