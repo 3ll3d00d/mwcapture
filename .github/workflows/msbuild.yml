@@ -44,10 +44,15 @@ jobs:
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
-    - name: Setup vcpkg
+    - name: Setup vcpkg for mwcapture
       uses: lukka/run-vcpkg@v11
       with:
-        vcpkgJsonGlob: '**/vcpkg.json'      
+        vcpkgJsonGlob: 'mwcapture/vcpkg.json'      
+
+    - name: Setup vcpkg for mwcapture-test
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgJsonGlob: 'mwcapture-test/vcpkg.json'      
 
     - name: vcpkg integrate 
       run: vcpkg integrate install
