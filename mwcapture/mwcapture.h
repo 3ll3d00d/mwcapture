@@ -418,7 +418,6 @@ class MagewellVideoCapturePin :
 {
 public:
     MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
-    ~MagewellVideoCapturePin();
 
     void GetReferenceTime(REFERENCE_TIME* rt) const;
 
@@ -463,28 +462,6 @@ protected:
         BYTE* pmsData;
     };
 
-    // As per VideoFrameGrabber but with a different strategy to get the no signal image
-    class NoSignalImageGrabber
-    {
-    public:
-        NoSignalImageGrabber(MagewellVideoCapturePin* pin, HCHANNEL hChannel, DeviceType deviceType, IMediaSample* pms);
-        ~NoSignalImageGrabber();
-
-        NoSignalImageGrabber(NoSignalImageGrabber const&) = delete;
-        NoSignalImageGrabber& operator =(NoSignalImageGrabber const&) = delete;
-        NoSignalImageGrabber(NoSignalImageGrabber&&) = delete;
-        NoSignalImageGrabber& operator=(NoSignalImageGrabber&&) = delete;
-
-        HRESULT grab() const;
-
-    private:
-        HCHANNEL hChannel;
-        DeviceType deviceType;
-        MagewellVideoCapturePin* pin;
-        IMediaSample* pms;
-        BYTE* pmsData;
-    };
-
     // USB only
     class VideoCapture
     {
@@ -504,9 +481,6 @@ protected:
     // USB only
     VideoCapture* mVideoCapture{nullptr};
     CAPTURED_FRAME mCapturedFrame{};
-    // pro only
-    HANDLE mTimerNotify;
-    HTIMER mTimer;
 
     static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal, USB_CAPTURE_FORMATS* captureFormats);
     // USB only

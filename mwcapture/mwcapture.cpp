@@ -60,16 +60,16 @@ constexpr auto high_luminance_scale_factor = 1.0;
 constexpr auto low_luminance_scale_factor = 0.0001;
 
 // bit depth -> pixel encoding -> fourcc
-constexpr DWORD fourcc[3][5] = {
+constexpr DWORD fourcc[3][4] = {
 	// RGB444, YUV422, YUV444, YUY420, NONE
-	{MWFOURCC_BGR24, MWFOURCC_NV16, MWFOURCC_V308, MWFOURCC_NV12, MWFOURCC_RGB24}, // 8  bit
-	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010, MWFOURCC_RGB10}, // 10 bit
-	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010, MWFOURCC_RGB10}, // 12 bit
+	{MWFOURCC_BGR24, MWFOURCC_NV16, MWFOURCC_V308, MWFOURCC_NV12}, // 8  bit
+	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 10 bit
+	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 12 bit
 };
-constexpr std::string_view fourccName[3][5] = {
-	{"BGR24", "NV16", "V308", "NV12", "RGB24"},
-	{"BGR10", "P210", "AYUV", "P010", "RGB10"},
-	{"BGR10", "P210", "AYUV", "P010", "RGB10"},
+constexpr std::string_view fourccName[3][4] = {
+	{"BGR24", "NV16", "V308", "NV12"},
+	{"BGR10", "P210", "AYUV", "P010"},
+	{"BGR10", "P210", "AYUV", "P010"},
 };
 
 constexpr AMOVIESETUP_MEDIATYPE sVideoPinTypes =
@@ -1253,197 +1253,6 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 }
 
 //////////////////////////////////////////////////////////////////////////
-//  MagewellVideoCapturePin::NoSignalImageGrabber
-//////////////////////////////////////////////////////////////////////////
-MagewellVideoCapturePin::NoSignalImageGrabber::NoSignalImageGrabber(MagewellVideoCapturePin* pin,
-	HCHANNEL hChannel, DeviceType deviceType, IMediaSample* pms) :
-	hChannel(hChannel),
-	deviceType(deviceType),
-	pin(pin),
-	pms(pms)
-{
-	this->pms->GetPointer(&pmsData);
-
-	if (deviceType == PRO)
-	{
-		#ifndef NO_QUILL
-		LOG_TRACE_L2(pin->mLogger, "[{}] Pinning {} bytes for NoSignalImage", this->pin->mLogPrefix, this->pms->GetSize());
-		#endif
-
-		MWPinVideoBuffer(hChannel, pmsData, this->pms->GetSize());
-	}
-}
-
-MagewellVideoCapturePin::NoSignalImageGrabber::~NoSignalImageGrabber()
-{
-	if (deviceType == PRO)
-	{
-		#ifndef NO_QUILL
-		LOG_TRACE_L2(pin->mLogger, "[{}] Unpinning {} bytes, captured {} bytes", pin->mLogPrefix, pms->GetSize(),
-			pms->GetActualDataLength());
-		#endif
-
-		MWUnpinVideoBuffer(hChannel, pmsData);
-	}
-}
-
-HRESULT MagewellVideoCapturePin::NoSignalImageGrabber::grab() const
-{
-	auto retVal = S_OK;
-	auto hasFrame = false;
-	auto proDevice = deviceType == PRO;
-	auto mustExit = false;
-	while (!hasFrame && !mustExit)
-	{
-		if (proDevice)
-		{
-			pin->GetReferenceTime(&pin->mFrameEndTime);
-			auto expireTime = pin->mFrameEndTime + pin->mVideoFormat.frameInterval;
-			pin->mLastMwResult = MWScheduleTimer(hChannel, pin->mTimer, expireTime);
-			if (pin->mLastMwResult != MW_SUCCEEDED)
-			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Can't schedule timer ({}), will break", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-				#endif
-
-				mustExit = true;
-				continue;
-			}
-			DWORD dwRet = WaitForSingleObject(pin->mTimerNotify, 1000);
-			if (dwRet != WAIT_OBJECT_0)
-			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Wait not ended by timer, will break ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-				#endif
-
-				mustExit = true;
-				continue;
-			}
-
-			pin->mLastMwResult = MWGetVideoBufferInfo(hChannel, &pin->mVideoSignal.bufferInfo);
-			if (pin->mLastMwResult != MW_SUCCEEDED)
-			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Can't get VideoBufferInfo ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-				#endif
-
-				continue;
-			}
-
-			pin->mLastMwResult = MWGetVideoFrameInfo(hChannel, pin->mVideoSignal.bufferInfo.iNewestBuffered,
-				&pin->mVideoSignal.frameInfo);
-			if (pin->mLastMwResult != MW_SUCCEEDED)
-			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Can't get VideoFrameInfo ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-				#endif
-
-				continue;
-			}
-
-			pin->mLastMwResult = MWCaptureVideoFrameToVirtualAddress(
-				hChannel,
-				MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERED,
-				pmsData,
-				pin->mVideoFormat.imageSize,
-				pin->mVideoFormat.lineLength,
-				FALSE,
-				nullptr,
-				pin->mVideoFormat.pixelStructure,
-				pin->mVideoFormat.cx,
-				pin->mVideoFormat.cy
-			);
-			auto tries = 0;
-			do
-			{
-				tries++;
-				dwRet = WaitForSingleObject(pin->mCaptureEvent, 1000);
-				if (dwRet != WAIT_OBJECT_0)
-				{
-					#ifndef NO_QUILL
-					LOG_TRACE_L1(pin->mLogger, "[{}] Unexpected capture event ({:#08x})", pin->mLogPrefix, dwRet);
-					#endif
-
-					if (dwRet == STATUS_TIMEOUT)
-					{
-						#ifndef NO_QUILL
-						LOG_TRACE_L1(pin->mLogger, "[{}] Wait for frame has timed out", pin->mLogPrefix);
-						#endif
-						mustExit = tries >= 10;
-						if (mustExit) break;
-					}
-
-					if (pin->CheckStreamState(nullptr) == STREAM_DISCARDING)
-					{
-						mustExit = true;
-						break;
-					}
-				}
-
-				pin->mLastMwResult = MWGetVideoCaptureStatus(hChannel, &pin->mVideoSignal.captureStatus);
-
-				#ifndef NO_QUILL
-				if (pin->mLastMwResult != MW_SUCCEEDED)
-				{
-					LOG_TRACE_L1(pin->mLogger, "[{}] MWGetVideoCaptureStatus failed ({})", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-				}
-				#endif
-
-				hasFrame = pin->mVideoSignal.captureStatus.bFrameCompleted;
-
-				#ifndef NO_QUILL
-				if (!hasFrame)
-				{
-					if (pin->mLastMwResult != MW_SUCCEEDED)
-					{
-						LOG_TRACE_L1(pin->mLogger, "[{}] Captured NoSignalImage but capture incomplete, indicated frame is {}, retrying", pin->mLogPrefix, 
-							pin->mVideoSignal.captureStatus.iFrame);
-					}
-				}
-				#endif
-
-			} while (pin->mLastMwResult == MW_SUCCEEDED && !hasFrame);
-		}
-		else
-		{
-			CAutoLock lck(&pin->mCaptureCritSec);
-			memcpy(pmsData, pin->mCapturedFrame.data, pin->mCapturedFrame.length);
-			hasFrame = true;
-		}
-	}
-	if (hasFrame)
-	{
-		pin->GetReferenceTime(&pin->mFrameEndTime);
-		auto endTime = pin->mFrameEndTime - pin->mStreamStartTime;
-		auto startTime = endTime - pin->mVideoFormat.frameInterval;
-		pms->SetTime(&startTime, &endTime);
-		pms->SetSyncPoint(TRUE);
-		pin->mFrameCounter++;
-
-		#ifndef NO_QUILL
-		LOG_TRACE_L1(pin->mLogger, "[{}] Captured video frame {} at {}", pin->mLogPrefix,
-			pin->mFrameCounter, endTime);
-		#endif
-
-		if (pin->mSendMediaType)
-		{
-			CMediaType cmt(pin->m_mt);
-			AM_MEDIA_TYPE* sendMediaType = CreateMediaType(&cmt);
-			pms->SetMediaType(sendMediaType);
-			DeleteMediaType(sendMediaType);
-			pin->mSendMediaType = FALSE;
-		}
-	}
-	else
-	{
-		#ifndef NO_QUILL
-		LOG_TRACE_L1(pin->mLogger, "[{}] No frame loaded", pin->mLogPrefix, static_cast<int>(pin->mLastMwResult));
-		#endif
-	}
-	return retVal;
-}
-
-//////////////////////////////////////////////////////////////////////////
 // MagewellVideoCapturePin
 //////////////////////////////////////////////////////////////////////////
 MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview) :
@@ -1525,19 +1334,6 @@ MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFi
 	{
 		mCapturedFrame.data = new BYTE[mVideoFormat.imageSize];
 	}
-	else
-	{
-		mTimerNotify = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-		mTimer = MWRegisterTimer(hChannel, mTimerNotify);
-	}
-}
-
-MagewellVideoCapturePin::~MagewellVideoCapturePin()
-{
-	if (mTimer)
-	{
-		MWUnregisterTimer(mFilter->GetChannelHandle(), mTimer);
-	}
 }
 
 void MagewellVideoCapturePin::GetReferenceTime(REFERENCE_TIME* rt) const
@@ -1562,10 +1358,6 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 		videoFormat->pixelEncoding = videoSignal->inputStatus.hdmiStatus.pixelEncoding;
 
 		LoadHdrMeta(&videoFormat->hdrMeta, &videoSignal->hdrInfo);
-
-		auto idx = videoFormat->bitDepth == 8 ? 0 : videoFormat->bitDepth == 10 ? 1 : 2;
-		videoFormat->pixelStructure = fourcc[idx][videoFormat->pixelEncoding];
-		videoFormat->pixelStructureName = fourccName[idx][videoFormat->pixelEncoding];
 	}
 	else
 	{
@@ -1577,9 +1369,11 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 		videoFormat->saturation = MWCAP_VIDEO_SATURATION_FULL;
 		videoFormat->colourFormat = MWCAP_VIDEO_COLOR_FORMAT_RGB;
 		videoFormat->pixelEncoding = HDMI_ENCODING_RGB_444;
-		videoFormat->pixelStructure = fourcc[0][0];
-		videoFormat->pixelStructureName = fourccName[0][0];
 	}
+
+	auto idx = videoFormat->bitDepth == 8 ? 0 : videoFormat->bitDepth == 10 ? 1 : 2;
+	videoFormat->pixelStructure = fourcc[idx][videoFormat->pixelEncoding];
+	videoFormat->pixelStructureName = fourccName[idx][videoFormat->pixelEncoding];
 
 	if (videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV709)
 	{
@@ -2208,17 +2002,8 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 
 HRESULT MagewellVideoCapturePin::FillBuffer(IMediaSample* pms)
 {
-	HRESULT retVal;
-	if (mHasSignal)
-	{
-		VideoFrameGrabber vfg(this, mFilter->GetChannelHandle(), mFilter->GetDeviceType(), pms);
-		retVal = vfg.grab();
-	}
-	else
-	{
-		NoSignalImageGrabber nsig(this, mFilter->GetChannelHandle(), mFilter->GetDeviceType(), pms);
-		retVal = nsig.grab();
-	}
+	VideoFrameGrabber vfg(this, mFilter->GetChannelHandle(), mFilter->GetDeviceType(), pms);
+	auto retVal = vfg.grab();
 	if (S_FALSE == HandleStreamStateChange(pms))
 	{
 		retVal = S_FALSE;
