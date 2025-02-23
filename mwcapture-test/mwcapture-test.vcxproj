@@ -72,8 +72,8 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>
-      </AdditionalDependencies>
+      <AdditionalDependencies>gtest_main.lib</AdditionalDependencies>
+      <ShowProgress>NotSet</ShowProgress>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
