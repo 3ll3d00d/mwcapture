@@ -134,7 +134,7 @@ struct VIDEO_FORMAT
 {
     MWCAP_VIDEO_COLOR_FORMAT colourFormat{ MWCAP_VIDEO_COLOR_FORMAT_YUV709 };
     HDMI_PXIEL_ENCODING pixelEncoding{ HDMI_ENCODING_YUV_420 };
-    byte bitDepth{ 10 };
+    byte bitDepth{ 8 };
     int cx{ 3840 };
     int cy{ 2160 };
     DWORD fps{ 50 };

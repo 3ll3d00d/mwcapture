@@ -1065,10 +1065,10 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				continue;
 			}
 
-			// capture a frame to the framebuffer
 			pin->mLastMwResult = MWCaptureVideoFrameToVirtualAddressEx(
 				hChannel,
-				pin->mHasSignal ? pin->mVideoSignal.bufferInfo.iNewestBuffering : MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERING,
+				// NEWEST_BUFFERING does not deliver the "no signal" image hence using BUFFERED
+				pin->mHasSignal ? pin->mVideoSignal.bufferInfo.iNewestBuffering : MWCAP_VIDEO_FRAME_ID_NEWEST_BUFFERED,
 				pmsData,
 				pin->mVideoFormat.imageSize,
 				pin->mVideoFormat.lineLength,
@@ -1359,8 +1359,17 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 		videoFormat->bitDepth = videoSignal->inputStatus.hdmiStatus.byBitDepth;
 		videoFormat->colourFormat = videoSignal->signalStatus.colorFormat;
 		videoFormat->pixelEncoding = videoSignal->inputStatus.hdmiStatus.pixelEncoding;
+
+		LoadHdrMeta(&videoFormat->hdrMeta, &videoSignal->hdrInfo);
 	}
-	LoadHdrMeta(&videoFormat->hdrMeta, &videoSignal->hdrInfo);
+	else
+	{
+		// invalid/no signal is RGB 4:4:4 image 
+		videoFormat->quantization = MWCAP_VIDEO_QUANTIZATION_FULL;
+		videoFormat->saturation = MWCAP_VIDEO_SATURATION_FULL;
+		videoFormat->colourFormat = MWCAP_VIDEO_COLOR_FORMAT_RGB;
+		videoFormat->pixelEncoding = HDMI_ENCODING_RGB_444;
+	}
 
 	if (videoFormat->colourFormat == MWCAP_VIDEO_COLOR_FORMAT_YUV709)
 	{
@@ -1665,13 +1674,16 @@ bool MagewellVideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat
 HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 {
 	mLastMwResult = MWGetVideoSignalStatus(*pChannel, &mVideoSignal.signalStatus);
+	auto retVal = S_OK;
 	if (mLastMwResult != MW_SUCCEEDED)
 	{
 		#ifndef NO_QUILL
 		LOG_WARNING(mLogger, "[{}] LoadSignal MWGetVideoSignalStatus failed", mLogPrefix);
 		#endif
 
-		return S_FALSE;
+		mVideoSignal.signalStatus.state = MWCAP_VIDEO_SIGNAL_NONE;
+
+		retVal = S_FALSE;
 	}
 	mLastMwResult = MWGetInputSpecificStatus(*pChannel, &mVideoSignal.inputStatus);
 	if (mLastMwResult != MW_SUCCEEDED)
@@ -1680,15 +1692,25 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus failed", mLogPrefix);
 		#endif
 
-		return S_FALSE;
+		mVideoSignal.inputStatus.bValid = false;
+
+		retVal = S_FALSE;
 	}
-	if (!mVideoSignal.inputStatus.bValid)
+	else if (!mVideoSignal.inputStatus.bValid)
+	{
+		retVal = S_FALSE;
+	}
+
+	if (retVal != S_OK)
 	{
 		#ifndef NO_QUILL
-		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus is invalid", mLogPrefix);
+		LOG_ERROR(mLogger, "[{}] LoadSignal MWGetInputSpecificStatus is invalid, will display no/unsupported signal image", mLogPrefix);
 		#endif
 
-		return S_FALSE;
+		mVideoSignal.inputStatus.hdmiStatus.byBitDepth = 8;
+		mVideoSignal.inputStatus.hdmiStatus.pixelEncoding = HDMI_ENCODING_RGB_444;
+
+		return retVal;
 	}
 
 	DWORD tPdwValidFlag = 0;
@@ -1814,65 +1836,57 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		if (FAILED(hr))
 		{
 			#ifndef NO_QUILL
-			LOG_WARNING(mLogger, "[{}] Can't load signal, retry after backoff", mLogPrefix);
+			LOG_WARNING(mLogger, "[{}] Can't load signal", mLogPrefix);
 			#endif
 
-			// BACKOFF;
-			// continue;
 			mHasSignal = false;
 		}
 		if (mVideoSignal.signalStatus.state != MWCAP_VIDEO_SIGNAL_LOCKED)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L2(mLogger, "[{}] No signal {}, retry after backoff", mLogPrefix,
+			LOG_TRACE_L2(mLogger, "[{}] Signal is not locked ({})", mLogPrefix,
 				static_cast<int>(mVideoSignal.signalStatus.state));
 			#endif
 
-			// BACKOFF;
-			// continue;
 			mHasSignal = false;
 		}
 		if (mVideoSignal.inputStatus.hdmiStatus.byBitDepth == 0)
 		{
 			#ifndef NO_QUILL
-			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0, retry after backoff", mLogPrefix);
+			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0", mLogPrefix);
 			#endif
 
-			// BACKOFF;
-			// continue;
 			mHasSignal = false;
 		}
 
-		if (mHasSignal)
-		{
-			VIDEO_FORMAT newVideoFormat{};
-			LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
+		VIDEO_FORMAT newVideoFormat{};
+		LoadFormat(&newVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
 
+		#ifndef NO_QUILL
+		LogHdrMetaIfPresent(&newVideoFormat);
+		#endif
+
+		// TODO compare to old format
+		if (ShouldChangeMediaType(&newVideoFormat))
+		{
 			#ifndef NO_QUILL
-			LogHdrMetaIfPresent(&newVideoFormat);
+			LOG_WARNING(mLogger, "[{}] VideoFormat changed! Attempting to reconnect", mLogPrefix);
 			#endif
 
-			if (ShouldChangeMediaType(&newVideoFormat))
+			CMediaType proposedMediaType(m_mt);
+			VideoFormatToMediaType(&proposedMediaType, &newVideoFormat);
+
+			hr = DoChangeMediaType(&proposedMediaType, &newVideoFormat);
+			if (FAILED(hr))
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] VideoFormat changed! Attempting to reconnect", mLogPrefix);
+				LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {:#08x}]",
+					mLogPrefix, hr);
 				#endif
 
-				CMediaType proposedMediaType(m_mt);
-				VideoFormatToMediaType(&proposedMediaType, &newVideoFormat);
-
-				hr = DoChangeMediaType(&proposedMediaType, &newVideoFormat);
-				if (FAILED(hr))
-				{
-					#ifndef NO_QUILL
-					LOG_ERROR(mLogger, "[{}] VideoFormat changed but not able to reconnect! retry after backoff [Result: {:#08x}]",
-						mLogPrefix, hr);
-					#endif
-
-					// TODO show OSD to say we need to change
-					BACKOFF;
-					continue;
-				}
+				// TODO show OSD to say we need to change
+				BACKOFF;
+				continue;
 			}
 		}
 
