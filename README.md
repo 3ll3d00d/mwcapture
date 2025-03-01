@@ -81,6 +81,8 @@ Most issues require an understanding of what signal is presented to the filter. 
 
 ### Magewell Property Pages
 
+> :warning: These are only available when using the magewell filter, they are **NOT** available using mwcapture
+
 Pages 15 & 19-23 of the [official installation guide](https://www.magewell.com/files/ProCapture-User-Manual.pdf) provide full detail of the information provided.
 
 To access the property pages in MC
@@ -128,6 +130,8 @@ results in the following JRVR OSD
 ![](docs/img/hdr_jrvr_osd.png)
 
 ### mwcapture logs
+
+> :warning: These logs are generated when using mwcapture, they are **NOT** available using the magewell filter
 
 Start playback using the release-trace filter and examine the log file, sample log sections for different events are shown below
 
