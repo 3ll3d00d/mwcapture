@@ -44,9 +44,10 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include <dvdmedia.h>
 #include <array>
 #include <wmcodecdsp.h>
-
 #include "LibMWCapture/MWCapture.h"
 #include "util.h"
+#include "signalinfo.h"
+#include "lavfilters_side_data.h"
 
 // HDMI Audio Bitstream Codec Identification metadata
 
@@ -137,7 +138,7 @@ struct VIDEO_FORMAT
     byte bitDepth{ 8 };
     int cx{ 3840 };
     int cy{ 2160 };
-    DWORD fps{ 50 };
+    double fps{ 50.0 };
     LONGLONG frameInterval{ 200000 };
     int aspectX{ 16 };
     int aspectY{ 9 };
@@ -246,7 +247,11 @@ public:
  * Can inject HDR/WCG data if found on the incoming HDMI stream.
  */
 class MagewellCaptureFilter final :
-	public CSource, public IReferenceClock, public IAMFilterMiscFlags
+	public CSource,
+	public IReferenceClock,
+	public IAMFilterMiscFlags,
+	public ISignalInfo,
+    public ISpecifyPropertyPages
 {
 public:
 
@@ -262,6 +267,11 @@ public:
     DeviceType GetDeviceType() const;
 
     void GetReferenceTime(REFERENCE_TIME* rt) const;
+
+	// Callbacks to update the prop page data
+    void OnVideoSignalLoaded(VIDEO_SIGNAL* vs);
+    void OnVideoFormatLoaded(VIDEO_FORMAT* vf);
+    void OnHdrUpdated(MediaSideDataHDR* hdr);
 
 private:
 
@@ -296,10 +306,21 @@ public:
     STDMETHODIMP Pause() override;
     STDMETHODIMP Stop() override;
 
+    //////////////////////////////////////////////////////////////////////////
+    //  ISignalInfo
+    //////////////////////////////////////////////////////////////////////////
+    STDMETHODIMP GetSignalInfo(SIGNAL_INFO_VALUES* value) override;
+
+	//////////////////////////////////////////////////////////////////////////
+    //  ISpecifyPropertyPages
+    //////////////////////////////////////////////////////////////////////////
+    STDMETHODIMP GetPages(CAUUID* pPages) override;
+
 private:
     DEVICE_INFO mDeviceInfo;
     BOOL mInited;
     MWReferenceClock* mClock;
+    SIGNAL_INFO_VALUES mStatusInfo{};
 
 #ifndef NO_QUILL
     std::string mLogPrefix = "MagewellCaptureFilter";

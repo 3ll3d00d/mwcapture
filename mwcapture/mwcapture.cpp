@@ -36,7 +36,6 @@
 
 #include <initguid.h>
 
-#include "lavfilters_side_data.h"
 #include <cmath>
 
 #ifdef _DEBUG
@@ -128,10 +127,17 @@ CFactoryTemplate g_Templates[] = {
 		MagewellCaptureFilter::CreateInstance,
 		nullptr,
 		&sMIPSetup
+	},
+	{
+		L"Signal Info",
+		&CLSID_SIGNAL_INFO_PROP,
+		CSignalInfoProp::CreateInstance,
+		nullptr,
+		nullptr
 	}
 };
 
-int g_cTemplates{ 1 };
+int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
 
 //////////////////////////////////////////////////////////////////////////
 // MagewellCaptureFilter
@@ -153,17 +159,24 @@ STDMETHODIMP MagewellCaptureFilter::NonDelegatingQueryInterface(REFIID riid, voi
 {
 	CheckPointer(ppv, E_POINTER)
 
-		if (riid == _uuidof(IReferenceClock))
-		{
-			return GetInterface(static_cast<IReferenceClock*>(this), ppv);
-		}
+	if (riid == _uuidof(IReferenceClock))
+	{
+		return GetInterface(static_cast<IReferenceClock*>(this), ppv);
+	}
 	if (riid == _uuidof(IAMFilterMiscFlags))
 	{
 		return GetInterface(static_cast<IAMFilterMiscFlags*>(this), ppv);
 	}
+	if (riid == IID_ISpecifyPropertyPages)
+	{
+		return GetInterface(static_cast<ISpecifyPropertyPages*>(this),ppv);
+	}
+	if (riid == IID_ISignalInfo)
+	{
+		return GetInterface(static_cast<ISignalInfo*>(this), ppv);
+	}
 	return CSource::NonDelegatingQueryInterface(riid, ppv);
 }
-
 
 MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	CSource(L"MagewellCaptureFilter", punk, CLSID_MWCAPTURE_FILTER)
@@ -337,6 +350,203 @@ void MagewellCaptureFilter::GetReferenceTime(REFERENCE_TIME* rt) const
 	m_pClock->GetTime(rt);
 }
 
+void MagewellCaptureFilter::OnVideoSignalLoaded(VIDEO_SIGNAL* vs)
+{
+	mStatusInfo.inX = vs->signalStatus.cx;
+	mStatusInfo.inY = vs->signalStatus.cy;
+	mStatusInfo.inAspectX = vs->signalStatus.nAspectX;
+	mStatusInfo.inAspectY = vs->signalStatus.nAspectY;
+	mStatusInfo.inFps = vs->signalStatus.dwFrameDuration > 0 ? 10000000.0 / vs->signalStatus.dwFrameDuration : 0.0;
+
+	switch (vs->signalStatus.state)
+	{
+	case MWCAP_VIDEO_SIGNAL_NONE:
+		mStatusInfo.signalStatus = "No Signal";
+		break;
+	case MWCAP_VIDEO_SIGNAL_UNSUPPORTED:
+		mStatusInfo.signalStatus = "Unsupported Signal";
+		break;
+	case MWCAP_VIDEO_SIGNAL_LOCKING:
+		mStatusInfo.signalStatus = "Locking";
+		break;
+	case MWCAP_VIDEO_SIGNAL_LOCKED:
+		mStatusInfo.signalStatus = "Locked";
+		break;
+	}
+
+	switch (vs->signalStatus.colorFormat)
+	{
+	case MWCAP_VIDEO_COLOR_FORMAT_UNKNOWN:
+		mStatusInfo.inColourFormat = "?";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_RGB:
+		mStatusInfo.inColourFormat = "RGB";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV601:
+		mStatusInfo.inColourFormat = "YUV601";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV709:
+		mStatusInfo.inColourFormat = "YUV709";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020:
+		mStatusInfo.inColourFormat = "YUV2020";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020C:
+		mStatusInfo.inColourFormat = "YUV2020C";
+		break;
+	}
+
+	switch (vs->signalStatus.quantRange)
+	{
+	case MWCAP_VIDEO_QUANTIZATION_UNKNOWN:
+		mStatusInfo.inQuantisation = "?";
+		break;
+	case MWCAP_VIDEO_QUANTIZATION_LIMITED:
+		mStatusInfo.inQuantisation = "Limited";
+		break;
+	case MWCAP_VIDEO_QUANTIZATION_FULL:
+		mStatusInfo.inQuantisation = "Full";
+		break;
+	}
+
+	switch (vs->signalStatus.satRange)
+	{
+	case MWCAP_VIDEO_SATURATION_UNKNOWN:
+		mStatusInfo.inSaturation = "?";
+		break;
+	case MWCAP_VIDEO_SATURATION_LIMITED:
+		mStatusInfo.inSaturation = "Limited";
+		break;
+	case MWCAP_VIDEO_SATURATION_FULL:
+		mStatusInfo.inSaturation = "Full";
+		break;
+	case MWCAP_VIDEO_SATURATION_EXTENDED_GAMUT:
+		mStatusInfo.inSaturation = "Extended";
+		break;
+	}
+
+	mStatusInfo.validSignal = vs->inputStatus.bValid;
+	mStatusInfo.inBitDepth = vs->inputStatus.hdmiStatus.byBitDepth;
+
+	switch (vs->inputStatus.hdmiStatus.pixelEncoding)
+	{
+	case HDMI_ENCODING_YUV_420:
+		mStatusInfo.inPixelLayout = "YUV 4:2:0";
+		break;
+	case HDMI_ENCODING_YUV_422:
+		mStatusInfo.inPixelLayout = "YUV 4:2:2";
+		break;
+	case HDMI_ENCODING_YUV_444:
+		mStatusInfo.inPixelLayout = "YUV 4:4:4";
+		break;
+	case HDMI_ENCODING_RGB_444:
+		mStatusInfo.inPixelLayout = "RGB 4:4:4";
+		break;
+	}
+}
+
+void MagewellCaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
+{
+	mStatusInfo.outX = vf->cx;
+	mStatusInfo.outY = vf->cy;
+	mStatusInfo.outAspectX = vf->aspectX;
+	mStatusInfo.outAspectY = vf->aspectY;
+	mStatusInfo.outFps = vf->fps;
+
+	switch (vf->colourFormat)
+	{
+	case MWCAP_VIDEO_COLOR_FORMAT_UNKNOWN:
+		mStatusInfo.outColourFormat = "?";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_RGB:
+		mStatusInfo.outColourFormat = "RGB";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV601:
+		mStatusInfo.outColourFormat = "YUV601";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV709:
+		mStatusInfo.outColourFormat = "YUV709";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020:
+		mStatusInfo.outColourFormat = "YUV2020";
+		break;
+	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020C:
+		mStatusInfo.outColourFormat = "YUV2020C";
+		break;
+	}
+
+	switch (vf->quantization)
+	{
+	case MWCAP_VIDEO_QUANTIZATION_UNKNOWN:
+		mStatusInfo.outQuantisation = "?";
+		break;
+	case MWCAP_VIDEO_QUANTIZATION_LIMITED:
+		mStatusInfo.outQuantisation = "Limited";
+		break;
+	case MWCAP_VIDEO_QUANTIZATION_FULL:
+		mStatusInfo.outQuantisation = "Full";
+		break;
+	}
+
+	switch (vf->saturation)
+	{
+	case MWCAP_VIDEO_SATURATION_UNKNOWN:
+		mStatusInfo.outSaturation = "?";
+		break;
+	case MWCAP_VIDEO_SATURATION_LIMITED:
+		mStatusInfo.outSaturation = "Limited";
+		break;
+	case MWCAP_VIDEO_SATURATION_FULL:
+		mStatusInfo.outSaturation = "Full";
+		break;
+	case MWCAP_VIDEO_SATURATION_EXTENDED_GAMUT:
+		mStatusInfo.outSaturation = "Extended";
+		break;
+	}
+
+	mStatusInfo.outBitDepth = vf->bitDepth;
+
+	switch (vf->pixelEncoding)
+	{
+	case HDMI_ENCODING_YUV_420:
+		mStatusInfo.outPixelLayout = "YUV 4:2:0";
+		break;
+	case HDMI_ENCODING_YUV_422:
+		mStatusInfo.outPixelLayout = "YUV 4:2:2";
+		break;
+	case HDMI_ENCODING_YUV_444:
+		mStatusInfo.outPixelLayout = "YUV 4:4:4";
+		break;
+	case HDMI_ENCODING_RGB_444:
+		mStatusInfo.outPixelLayout = "RGB 4:4:4";
+		break;
+	}
+
+	mStatusInfo.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+}
+
+void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr)
+{
+	if (hdr == nullptr)
+	{
+		mStatusInfo.hdrOn = false;
+	}
+	else
+	{
+		mStatusInfo.hdrOn = true;
+		mStatusInfo.hdrPrimaryRX = hdr->display_primaries_x[2];
+		mStatusInfo.hdrPrimaryRY = hdr->display_primaries_y[2];
+		mStatusInfo.hdrPrimaryGX = hdr->display_primaries_x[0];
+		mStatusInfo.hdrPrimaryGY = hdr->display_primaries_y[0];
+		mStatusInfo.hdrPrimaryBX = hdr->display_primaries_x[1];
+		mStatusInfo.hdrPrimaryBY = hdr->display_primaries_y[1];
+		mStatusInfo.hdrWpX = hdr->white_point_x;
+		mStatusInfo.hdrWpY = hdr->white_point_y;
+		mStatusInfo.hdrMinDML = hdr->min_display_mastering_luminance;
+		mStatusInfo.hdrMaxDML = hdr->max_display_mastering_luminance;
+	}
+}
+
 HRESULT MagewellCaptureFilter::GetTime(REFERENCE_TIME* pTime)
 {
 	return mClock->GetTime(pTime);
@@ -441,6 +651,25 @@ STDMETHODIMP MagewellCaptureFilter::Stop()
 		stream->NotifyFilterState(State_Stopped);
 	}
 	return CBaseFilter::Stop();
+}
+
+STDMETHODIMP MagewellCaptureFilter::GetSignalInfo(SIGNAL_INFO_VALUES* value)
+{
+	*value = mStatusInfo;
+	return S_OK;
+}
+
+STDMETHODIMP MagewellCaptureFilter::GetPages(CAUUID* pPages)
+{
+	CheckPointer(pPages, E_POINTER);
+	pPages->cElems = 1;
+	pPages->pElems = static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID) * pPages->cElems));
+	if (pPages->pElems == nullptr)
+	{
+		return E_OUTOFMEMORY;
+	}
+	pPages->pElems[0] = CLSID_SIGNAL_INFO_PROP;
+	return S_OK;
 }
 
 
@@ -1242,6 +1471,8 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", pin->mLogPrefix,
 					hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
 				#endif
+
+				pin->mFilter->OnHdrUpdated(&hdr);
 			}
 			else
 			{
@@ -1307,13 +1538,15 @@ MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFi
 	}
 
 	auto hr = LoadSignal(&hChannel);
+	mFilter->OnVideoSignalLoaded(&mVideoSignal);
+
 	if (SUCCEEDED(hr))
 	{
 		LoadFormat(&mVideoFormat, &mVideoSignal, &mUsbCaptureFormats);
 
 		#ifndef NO_QUILL
 		LOG_WARNING(
-			mLogger, "[{}] Initialised video format {} x {} ({}:{}) @ {} Hz in {} bits ({} {} tf: {}) size {} bytes",
+			mLogger, "[{}] Initialised video format {} x {} ({}:{}) @ {:.3f} Hz in {} bits ({} {} tf: {}) size {} bytes",
 			mLogPrefix,
 			mVideoFormat.cx, mVideoFormat.cy, mVideoFormat.aspectX, mVideoFormat.aspectY, mVideoFormat.fps,
 			mVideoFormat.bitDepth,
@@ -1330,7 +1563,7 @@ MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFi
 		#ifndef NO_QUILL
 		LOG_WARNING(
 			mLogger,
-			"[{}] Initialised video format using defaults {} x {} ({}:{}) @ {} Hz in {} bits ({} {} tf: {}) size {} bytes",
+			"[{}] Initialised video format using defaults {} x {} ({}:{}) @ {.3f} Hz in {} bits ({} {} tf: {}) size {} bytes",
 			mLogPrefix,
 			mVideoFormat.cx, mVideoFormat.cy, mVideoFormat.aspectX, mVideoFormat.aspectY, mVideoFormat.fps,
 			mVideoFormat.bitDepth,
@@ -1338,6 +1571,8 @@ MagewellVideoCapturePin::MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFi
 			mVideoFormat.imageSize);
 		#endif
 	}
+	mFilter->OnVideoFormatLoaded(&mVideoFormat);
+
 	if (mFilter->GetDeviceType() == USB)
 	{
 		mCapturedFrame.data = new BYTE[mVideoFormat.imageSize];
@@ -1359,7 +1594,7 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 		videoFormat->aspectY = videoSignal->signalStatus.nAspectY;
 		videoFormat->quantization = videoSignal->signalStatus.quantRange;
 		videoFormat->saturation = videoSignal->signalStatus.satRange;
-		videoFormat->fps = 10000000 / videoSignal->signalStatus.dwFrameDuration;
+		videoFormat->fps = 10000000.0 / videoSignal->signalStatus.dwFrameDuration;
 		videoFormat->frameInterval = videoSignal->signalStatus.dwFrameDuration;
 		videoFormat->bitDepth = videoSignal->inputStatus.hdmiStatus.byBitDepth;
 		videoFormat->colourFormat = videoSignal->signalStatus.colorFormat;
@@ -1622,7 +1857,7 @@ bool MagewellVideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video FPS change {} to {}", mLogPrefix, mVideoFormat.fps, newVideoFormat->fps);
+		LOG_INFO(mLogger, "[{}] Video FPS change {:.3f} to {:.3f}", mLogPrefix, mVideoFormat.fps, newVideoFormat->fps);
 		#endif
 	}
 	if (mVideoFormat.bitDepth != newVideoFormat->bitDepth)
@@ -1716,45 +1951,48 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 
 		mVideoSignal.inputStatus.hdmiStatus.byBitDepth = 8;
 		mVideoSignal.inputStatus.hdmiStatus.pixelEncoding = HDMI_ENCODING_RGB_444;
-
-		return retVal;
-	}
-
-	DWORD tPdwValidFlag = 0;
-	MWGetHDMIInfoFrameValidFlag(*pChannel, &tPdwValidFlag);
-	HDMI_INFOFRAME_PACKET pkt;
-	if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_HDR)
-	{
-		MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_HDR, &pkt);
-		if (!mHasHdrInfoFrame)
-		{
-			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF,
-				pkt.hdrInfoFramePayload.byEOTF);
-			#endif
-			mHasHdrInfoFrame = true;
-		}
-		mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
-	}
-	else
-	{
-		if (mHasHdrInfoFrame)
-		{
-			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe no longer present", mLogPrefix);
-			#endif
-			mHasHdrInfoFrame = false;
-		}
+		mHasHdrInfoFrame = true;
 		mVideoSignal.hdrInfo = {};
-	}
-	if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AVI)
-	{
-		MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_AVI, &pkt);
-		mVideoSignal.aviInfo = pkt.aviInfoFramePayload;
+		mVideoSignal.aviInfo = {};
 	}
 	else
 	{
-		mVideoSignal.aviInfo = {};
+		DWORD tPdwValidFlag = 0;
+		MWGetHDMIInfoFrameValidFlag(*pChannel, &tPdwValidFlag);
+		HDMI_INFOFRAME_PACKET pkt;
+		if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_HDR)
+		{
+			MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_HDR, &pkt);
+			if (!mHasHdrInfoFrame)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF,
+					pkt.hdrInfoFramePayload.byEOTF);
+				#endif
+				mHasHdrInfoFrame = true;
+			}
+			mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
+		}
+		else
+		{
+			if (mHasHdrInfoFrame)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe no longer present", mLogPrefix);
+				#endif
+				mHasHdrInfoFrame = false;
+			}
+			mVideoSignal.hdrInfo = {};
+		}
+		if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AVI)
+		{
+			MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_AVI, &pkt);
+			mVideoSignal.aviInfo = pkt.aviInfoFramePayload;
+		}
+		else
+		{
+			mVideoSignal.aviInfo = {};
+		}
 	}
 	return S_OK;
 }
@@ -1763,7 +2001,7 @@ HRESULT MagewellVideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const 
 {
 	#ifndef NO_QUILL
 	LOG_WARNING(
-		mLogger, "[{}] Proposing new video format {} x {} ({}:{}) @ {} Hz in {} bits ({} {} tf: {}) size {} bytes",
+		mLogger, "[{}] Proposing new video format {} x {} ({}:{}) @ {:.3f} Hz in {} bits ({} {} tf: {}) size {} bytes",
 		mLogPrefix,
 		newVideoFormat->cx, newVideoFormat->cy, newVideoFormat->aspectX, newVideoFormat->aspectY, newVideoFormat->fps,
 		newVideoFormat->bitDepth,
@@ -1838,6 +2076,8 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		}
 		auto channel = mFilter->GetChannelHandle();
 		auto hr = LoadSignal(&channel);
+		auto hadSignal = mHasSignal == true;
+
 		mHasSignal = true;
 
 		if (FAILED(hr))
@@ -1884,6 +2124,9 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			VideoFormatToMediaType(&proposedMediaType, &newVideoFormat);
 
 			hr = DoChangeMediaType(&proposedMediaType, &newVideoFormat);
+
+			mFilter->OnVideoSignalLoaded(&mVideoSignal);
+
 			if (FAILED(hr))
 			{
 				#ifndef NO_QUILL
@@ -1895,6 +2138,13 @@ HRESULT MagewellVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 				BACKOFF;
 				continue;
 			}
+
+			mFilter->OnVideoFormatLoaded(&mVideoFormat);
+		}
+
+		if (hadSignal && !mHasSignal)
+		{
+			mFilter->OnVideoSignalLoaded(&mVideoSignal);
 		}
 
 		// grab next frame 
@@ -2035,6 +2285,8 @@ HRESULT MagewellVideoCapturePin::OnThreadCreate()
 
 	auto hChannel = mFilter->GetChannelHandle();
 	LoadSignal(&hChannel);
+
+	mFilter->OnVideoSignalLoaded(&mVideoSignal);
 
 	auto deviceType = mFilter->GetDeviceType();
 	if (deviceType == PRO)
