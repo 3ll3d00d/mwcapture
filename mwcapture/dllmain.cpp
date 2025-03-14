@@ -51,10 +51,79 @@ DEFINE_GUID(MEDIASUBTYPE_PCM_IN32, 0x32336E69, 0x0000, 0x0010, 0x80, 0x00, 0x00,
 DEFINE_GUID(MEDIASUBTYPE_PCM_SOWT, 0x74776f73, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71);
 
 
+constexpr AMOVIESETUP_MEDIATYPE sVideoPinTypes =
+{
+    &MEDIATYPE_Video, // Major type
+    &MEDIASUBTYPE_NULL // Minor type
+};
+
+constexpr AMOVIESETUP_MEDIATYPE sAudioPinTypes =
+{
+    &MEDIATYPE_Audio, // Major type
+    &MEDIASUBTYPE_NULL // Minor type
+};
+
+constexpr AMOVIESETUP_PIN sVideoPin = {
+    const_cast<LPWSTR>(L"Video"),
+    FALSE, // Is it rendered
+    TRUE, // Is it an output
+    FALSE, // Are we allowed none
+    FALSE, // And allowed many
+    &CLSID_NULL, // Connects to filter
+    nullptr, // Connects to pin
+    1, // Number of types
+    &sVideoPinTypes // Pin information
+};
+
+constexpr AMOVIESETUP_PIN sAudioPin = {
+    const_cast<LPWSTR>(L"Audio"),
+    FALSE, // Is it rendered
+    TRUE, // Is it an output
+    FALSE, // Are we allowed none
+    FALSE, // And allowed many
+    &CLSID_NULL, // Connects to filter
+    nullptr, // Connects to pin
+    1, // Number of types
+    &sAudioPinTypes // Pin information
+};
+
+const AMOVIESETUP_PIN sMIPPins[] = { sVideoPin, sAudioPin };
+
+constexpr AMOVIESETUP_FILTER sMIPSetup =
+{
+    &CLSID_MWCAPTURE_FILTER, // Filter CLSID
+    L"MagewellCapture", // String name
+    MERIT_DO_NOT_USE, // Filter merit
+    2, // Number of pins
+    sMIPPins // Pin information
+};
+
+
+// List of class IDs and creator functions for the class factory.
+CFactoryTemplate g_Templates[] = {
+    {
+        FILTER_NAME,
+        &CLSID_MWCAPTURE_FILTER,
+        MagewellCaptureFilter::CreateInstance,
+        nullptr,
+        &sMIPSetup
+    },
+    {
+        L"MWCapture Properties",
+        &CLSID_SignalInfoProps,
+        CSignalInfoProp::CreateInstance,
+        nullptr,
+        nullptr
+    }
+};
+
+int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
+
+STDAPI RegisterAllServers(LPCWSTR szFileName, BOOL bRegister);
+
 STDAPI AMovieSetupRegisterServer(CLSID clsServer, LPCWSTR szDescription, LPCWSTR szFileName, LPCWSTR szThreadingModel = L"Both", LPCWSTR szServerType = L"InprocServer32");
 
 STDAPI AMovieSetupUnregisterServer(CLSID clsServer);
-
 
 STDAPI RegisterFilters(BOOL bRegister)
 {
@@ -70,7 +139,7 @@ STDAPI RegisterFilters(BOOL bRegister)
     HRESULT hr = CoInitialize(0);
     if (bRegister)
     {
-        hr = AMovieSetupRegisterServer(CLSID_MWCAPTURE_FILTER, FILTER_NAME, achFileName, L"Both", L"InprocServer32");
+        hr = RegisterAllServers(achFileName, TRUE);
     }
 
     if (SUCCEEDED(hr))
@@ -99,7 +168,7 @@ STDAPI RegisterFilters(BOOL bRegister)
     }
 
     if (!bRegister)
-        hr += AMovieSetupUnregisterServer(CLSID_MWCAPTURE_FILTER);
+        hr += RegisterAllServers(achFileName, FALSE);
 
     CoFreeUnusedLibraries();
     CoUninitialize();

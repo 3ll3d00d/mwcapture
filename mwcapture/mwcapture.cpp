@@ -71,74 +71,6 @@ constexpr std::string_view fourccName[3][4] = {
 	{"BGR10", "P210", "AYUV", "P010"},
 };
 
-constexpr AMOVIESETUP_MEDIATYPE sVideoPinTypes =
-{
-	&MEDIATYPE_Video, // Major type
-	&MEDIASUBTYPE_NULL // Minor type
-};
-
-constexpr AMOVIESETUP_MEDIATYPE sAudioPinTypes =
-{
-	&MEDIATYPE_Audio, // Major type
-	&MEDIASUBTYPE_NULL // Minor type
-};
-
-constexpr AMOVIESETUP_PIN sVideoPin = {
-	const_cast<LPWSTR>(L"Video"),
-	FALSE, // Is it rendered
-	TRUE, // Is it an output
-	FALSE, // Are we allowed none
-	FALSE, // And allowed many
-	&CLSID_NULL, // Connects to filter
-	nullptr, // Connects to pin
-	1, // Number of types
-	&sVideoPinTypes // Pin information
-};
-
-constexpr AMOVIESETUP_PIN sAudioPin = {
-	const_cast<LPWSTR>(L"Audio"),
-	FALSE, // Is it rendered
-	TRUE, // Is it an output
-	FALSE, // Are we allowed none
-	FALSE, // And allowed many
-	&CLSID_NULL, // Connects to filter
-	nullptr, // Connects to pin
-	1, // Number of types
-	&sAudioPinTypes // Pin information
-};
-
-const AMOVIESETUP_PIN sMIPPins[] = { sVideoPin, sAudioPin };
-
-constexpr AMOVIESETUP_FILTER sMIPSetup =
-{
-	&CLSID_MWCAPTURE_FILTER, // Filter CLSID
-	L"MagewellCapture", // String name
-	MERIT_DO_NOT_USE, // Filter merit
-	2, // Number of pins
-	sMIPPins // Pin information
-};
-
-
-// List of class IDs and creator functions for the class factory.
-CFactoryTemplate g_Templates[] = {
-	{
-		L"MagewellCapture",
-		&CLSID_MWCAPTURE_FILTER,
-		MagewellCaptureFilter::CreateInstance,
-		nullptr,
-		&sMIPSetup
-	},
-	{
-		L"Signal Info",
-		&CLSID_SIGNAL_INFO_PROP,
-		CSignalInfoProp::CreateInstance,
-		nullptr,
-		nullptr
-	}
-};
-
-int g_cTemplates = sizeof(g_Templates) / sizeof(g_Templates[0]);
-
 //////////////////////////////////////////////////////////////////////////
 // MagewellCaptureFilter
 //////////////////////////////////////////////////////////////////////////
@@ -166,6 +98,10 @@ STDMETHODIMP MagewellCaptureFilter::NonDelegatingQueryInterface(REFIID riid, voi
 	if (riid == _uuidof(IAMFilterMiscFlags))
 	{
 		return GetInterface(static_cast<IAMFilterMiscFlags*>(this), ppv);
+	}
+	if (riid == _uuidof(ISpecifyPropertyPages2))
+	{
+		return GetInterface(static_cast<ISpecifyPropertyPages2*>(this), ppv);
 	}
 	if (riid == IID_ISpecifyPropertyPages)
 	{
@@ -547,6 +483,29 @@ void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr)
 	}
 }
 
+void MagewellCaptureFilter::OnAudioSignalLoaded(AUDIO_SIGNAL* as)
+{
+	mStatusInfo.audioInStatus = as->signalStatus.bChannelStatusValid;
+	mStatusInfo.audioInIsPcm = as->signalStatus.bLPCM;
+	mStatusInfo.audioInBitDepth = as->signalStatus.cBitsPerSample;
+	mStatusInfo.audioInFs = as->signalStatus.dwSampleRate;
+	mStatusInfo.audioInChannelMask = as->signalStatus.wChannelValid;
+	mStatusInfo.audioInChannelMap = as->audioInfo.byChannelAllocation;
+	mStatusInfo.audioInLfeLevel = as->audioInfo.byLFEPlaybackLevel;
+}
+
+void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
+{
+	mStatusInfo.audioOutChannelLayout = af->channelLayout;
+	mStatusInfo.audioOutBitDepth = af->bitDepth;
+	mStatusInfo.audioOutCodec = codecNames[af->codec];
+	mStatusInfo.audioOutFs = af->fs;
+	mStatusInfo.audioOutLfeOffset = af->lfeLevelAdjustment;
+	mStatusInfo.audioOutLfeChannelIndex = af->lfeChannelIndex;
+	mStatusInfo.audioOutChannelCount = af->outputChannelCount;
+	mStatusInfo.audioOutDataBurstSize = af->dataBurstSize;
+}
+
 HRESULT MagewellCaptureFilter::GetTime(REFERENCE_TIME* pTime)
 {
 	return mClock->GetTime(pTime);
@@ -661,17 +620,41 @@ STDMETHODIMP MagewellCaptureFilter::GetSignalInfo(SIGNAL_INFO_VALUES* value)
 
 STDMETHODIMP MagewellCaptureFilter::GetPages(CAUUID* pPages)
 {
-	CheckPointer(pPages, E_POINTER);
+	CheckPointer(pPages, E_POINTER)
 	pPages->cElems = 1;
 	pPages->pElems = static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID) * pPages->cElems));
 	if (pPages->pElems == nullptr)
 	{
 		return E_OUTOFMEMORY;
 	}
-	pPages->pElems[0] = CLSID_SIGNAL_INFO_PROP;
+	pPages->pElems[0] = CLSID_SignalInfoProps;
 	return S_OK;
 }
 
+STDMETHODIMP MagewellCaptureFilter::CreatePage(const GUID& guid, IPropertyPage** ppPage)
+{
+	CheckPointer(ppPage, E_POINTER)
+	HRESULT hr = S_OK;
+
+	if (*ppPage != nullptr)
+	{
+		return E_INVALIDARG;
+	}
+
+	if (guid == CLSID_SignalInfoProps)
+	{
+		*ppPage = new CSignalInfoProp(nullptr, &hr);
+	}
+
+	if (SUCCEEDED(hr) && *ppPage)
+	{
+		(*ppPage)->AddRef();
+		return S_OK;
+	}
+	delete *ppPage;
+	ppPage = nullptr;  
+	return E_FAIL;
+}
 
 //////////////////////////////////////////////////////////////////////////
 // MagewellCapturePin
@@ -2488,9 +2471,11 @@ MagewellAudioCapturePin::MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFi
 	else
 	{
 		auto hr = LoadSignal(&hChannel);
+		mFilter->OnAudioSignalLoaded(&mAudioSignal);
 		if (hr == S_OK)
 		{
 			LoadFormat(&mAudioFormat, &mAudioSignal);
+			mFilter->OnAudioFormatLoaded(&mAudioFormat);
 		}
 		else
 		{
@@ -2676,6 +2661,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 						audioFormat->channelOffsets[2] = 1;
 						audioFormat->channelOffsets[3] = -1;
 						audioFormat->lfeChannelIndex = 2;
+						audioFormat->channelLayout = "FL FR FC LFE BL BR SL SR";
 					}
 					else
 					{
@@ -2688,6 +2674,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 						audioFormat->channelOffsets[6] = not_present;
 						audioFormat->channelOffsets[7] = not_present;
 						audioFormat->lfeChannelIndex = 2;
+						audioFormat->channelLayout = "FL FR FC LFE BL BR";
 					}
 				}
 				else
@@ -2701,6 +2688,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 					audioFormat->channelOffsets[2] = 1;
 					audioFormat->channelOffsets[3] = -1;
 					audioFormat->lfeChannelIndex = 2;
+					audioFormat->channelLayout = "FL FR FC LFE";
 				}
 			}
 			else
@@ -2712,6 +2700,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				audioFormat->channelOffsets[0] = 0;
 				audioFormat->channelOffsets[1] = 0;
 				audioFormat->lfeChannelIndex = not_present;
+				audioFormat->channelLayout = "FL FR";
 			}
 
 			// CEA-861-E Table 28
@@ -2719,9 +2708,11 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 			{
 			case 0x00:
 				// FL FR
+				audioFormat->channelLayout = "FL FR";
 				break;
 			case 0x01:
 				// FL FR LFE --
+				audioFormat->channelLayout = "FL FR LFE";
 				audioFormat->channelMask = KSAUDIO_SPEAKER_2POINT1;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 3;
@@ -2733,6 +2724,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x02:
 				// FL FR -- FC
+				audioFormat->channelLayout = "FL FR FC";
 				audioFormat->channelMask = KSAUDIO_SPEAKER_3POINT0;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 3;
@@ -2744,6 +2736,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x03:
 				// FL FR LFE FC
+				audioFormat->channelLayout = "FL FR FC LFE";
 				audioFormat->channelMask = KSAUDIO_SPEAKER_3POINT1;
 				audioFormat->inputChannelCount = 4;
 				audioFormat->outputChannelCount = 4;
@@ -2756,6 +2749,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x04:
 				// FL FR -- -- RC --
+				audioFormat->channelLayout = "FL FR RC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
 				audioFormat->outputChannelCount = 3;
@@ -2767,6 +2761,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x05:
 				// FL FR LFE -- RC --
+				audioFormat->channelLayout = "FL FR LFE RC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
@@ -2780,6 +2775,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x06:
 				// FL FR -- FC RC --
+				audioFormat->channelLayout = "FL FR FC RC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
@@ -2793,6 +2789,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x07:
 				// FL FR LFE FC RC --
+				audioFormat->channelLayout = "FL FR LFE FC RC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 6;
@@ -2809,6 +2806,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x08:
 				// FL FR -- -- RL RR
+				audioFormat->channelLayout = "FL FR RL RR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
 					SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 6;
@@ -2824,6 +2822,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x09:
 				// FL FR LFE -- RL RR
+				audioFormat->channelLayout = "FL FR LFE RL RR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 6;
@@ -2840,6 +2839,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x0A:
 				// FL FR -- FC RL RR
+				audioFormat->channelLayout = "FL FR FC RL RR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 6;
@@ -2855,7 +2855,8 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				audioFormat->lfeChannelIndex = not_present;
 				break;
 			case 0x0B:
-				// FL FR LFE FC RL RR
+				// FL FR LFE FC BL BR
+				audioFormat->channelLayout = "FL FR FC LFE BL BR";
 				audioFormat->channelMask = KSAUDIO_SPEAKER_5POINT1;
 				audioFormat->inputChannelCount = 6;
 				audioFormat->outputChannelCount = 6;
@@ -2871,6 +2872,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x0C:
 				// FL FR -- -- RL RR RC --
+				audioFormat->channelLayout = "FL FR BL BR BC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
 					SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -2889,6 +2891,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				// FL FR LFE -- RL RR RC --
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER;
+				audioFormat->channelLayout = "FL FR LFE BL BR BC";
 				audioFormat->inputChannelCount = 8;
 				audioFormat->outputChannelCount = 6;
 				audioFormat->channelOffsets[0] = 0;
@@ -2903,6 +2906,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x0E:
 				// FL FR -- FC RL RR RC --
+				audioFormat->channelLayout = "FL FR FC BL BR BC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -2919,6 +2923,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x0F:
 				// FL FR LFE FC RL RR RC --
+				audioFormat->channelLayout = "FL FR FC LFE BL BR BC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_LOW_FREQUENCY | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -2935,6 +2940,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x10:
 				// FL FR -- -- RL RR RLC RRC
+				audioFormat->channelLayout = "FL FR BL BR SL SR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_SIDE_LEFT |
 					SPEAKER_SIDE_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -2951,6 +2957,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x11:
 				// FL FR LFE -- RL RR RLC RRC
+				audioFormat->channelLayout = "FL FR LFE BL BR SL SR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -2967,6 +2974,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x12:
 				// FL FR -- FC RL RR RLC RRC
+				audioFormat->channelLayout = "FL FR FC BL BR SL SR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_SIDE_LEFT | SPEAKER_SIDE_RIGHT | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -2983,6 +2991,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x13:
 				// FL FR LFE FC RL RR RLC RRC (RL = side, RLC = back)
+				audioFormat->channelLayout = "FL FR FC LFE BL BR SL SR";
 				audioFormat->channelMask = KSAUDIO_SPEAKER_7POINT1_SURROUND;
 				audioFormat->inputChannelCount = 8;
 				audioFormat->outputChannelCount = 8;
@@ -2998,6 +3007,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x14:
 				// FL FR -- -- -- -- FLC FRC
+				audioFormat->channelLayout = "FL FR FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_LEFT_OF_CENTER |
 					SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3014,6 +3024,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x15:
 				// FL FR LFE -- -- -- FLC FRC
+				audioFormat->channelLayout = "FL FR LFE FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3030,6 +3041,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x16:
 				// FL FR -- FC -- -- FLC FRC
+				audioFormat->channelLayout = "FL FR FC FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3048,6 +3060,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x17:
 				// FL FR LFE FC -- -- FLC FRC
+				audioFormat->channelLayout = "FL FR FC LFE FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3064,6 +3077,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x18:
 				// FL FR -- -- RC -- FLC FRC
+				audioFormat->channelLayout = "FL FR RC FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_CENTER |
 					SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3080,6 +3094,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x19:
 				// FL FR LFE -- RC -- FLC FRC
+				audioFormat->channelLayout = "FL FR LFE RC FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_CENTER | SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3096,6 +3111,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1A:
 				// FL FR -- FC RC -- FLC FRC
+				audioFormat->channelLayout = "FL FR FC RC FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_CENTER | SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3112,6 +3128,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1B:
 				// FL FR LFE FC RC -- FLC FRC
+				audioFormat->channelLayout = "FL FR FC LFE RC FLC FRC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_CENTER | SPEAKER_FRONT_LEFT_OF_CENTER |
 					SPEAKER_FRONT_RIGHT_OF_CENTER;
@@ -3129,6 +3146,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1C:
 				// FL FR -- -- RL RR FLC FRC
+				audioFormat->channelLayout = "FL FR BL BR FLC FLR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
 					SPEAKER_BACK_RIGHT | SPEAKER_FRONT_LEFT_OF_CENTER | SPEAKER_FRONT_RIGHT_OF_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3145,6 +3163,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1D:
 				// FL FR LFE -- RL RR FLC FRC
+				audioFormat->channelLayout = "FL FR LFE BL BR FLC FLR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_FRONT_LEFT_OF_CENTER |
 					SPEAKER_FRONT_RIGHT_OF_CENTER;
@@ -3162,6 +3181,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1E:
 				// FL FR -- FC RL RR FLC FRC
+				audioFormat->channelLayout = "FL FR FC BL BR FLC FLR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_FRONT_LEFT_OF_CENTER |
 					SPEAKER_FRONT_RIGHT_OF_CENTER;
@@ -3179,6 +3199,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x1F:
 				// FL FR LFE FC RL RR FLC FRC
+				audioFormat->channelLayout = "FL FR LFE FC BL BR FLC FLR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_FRONT_LEFT_OF_CENTER |
 					SPEAKER_FRONT_RIGHT_OF_CENTER;
@@ -3196,6 +3217,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x20:
 				// FL FR -- FC RL RR FCH --
+				audioFormat->channelLayout = "FL FR FC BL BR TFC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3212,6 +3234,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x21:
 				// FL FR LFE FC RL RR FCH --
+				audioFormat->channelLayout = "FL FR FC LFE BL BR TFC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3228,6 +3251,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x22:
 				// FL FR -- FC RL RR -- TC
+				audioFormat->channelLayout = "FL FR FC BL BR TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3244,6 +3268,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x23:
 				// FL FR LFE FC RL RR -- TC
+				audioFormat->channelLayout = "FL FR FC LFE BL BR TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3260,6 +3285,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x24:
 				// FL FR -- -- RL RR FLH FRH
+				audioFormat->channelLayout = "FL FR BL BR TFL TFR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
 					SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_LEFT | SPEAKER_TOP_FRONT_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3276,6 +3302,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x25:
 				// FL FR LFE -- RL RR FLH FRH
+				audioFormat->channelLayout = "FL FR LFE BL BR TFL TFR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_LEFT | SPEAKER_TOP_FRONT_LEFT | SPEAKER_TOP_FRONT_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3292,6 +3319,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x26:
 				// FL FR -- -- RL RR FLW FRW (WIDE not supported by Windows, discarded)
+				audioFormat->channelLayout = "FL FR BL BR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_BACK_LEFT |
 					SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3308,6 +3336,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x27:
 				// FL FR LFE -- RL RR FLW FRW (WIDE not supported by Windows, discarded)
+				audioFormat->channelLayout = "FL FR LFE BL BR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_BACK_LEFT;
 				audioFormat->inputChannelCount = 8;
@@ -3324,6 +3353,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x28:
 				// FL FR -- FC RL RR RC TC
+				audioFormat->channelLayout = "FL FR FC BL BR BC TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER | SPEAKER_TOP_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3340,6 +3370,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x29:
 				// FL FR LFE FC RL RR RC TC
+				audioFormat->channelLayout = "FL FR FC LFE BL BR BC TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER |
 					SPEAKER_TOP_CENTER;
@@ -3357,6 +3388,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2A:
 				// FL FR -- FC RL RR RC FCH
+				audioFormat->channelLayout = "FL FR FC BL BR BC TFC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER | SPEAKER_TOP_FRONT_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3373,6 +3405,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2B:
 				// FL FR LFE FC RL RR RC FCH
+				audioFormat->channelLayout = "FL FR FC LFE BL BR BC TFC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_BACK_CENTER |
 					SPEAKER_TOP_FRONT_CENTER;
@@ -3390,6 +3423,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2C:
 				// FL FR -- FC RL RR FCH TC
+				audioFormat->channelLayout = "FL FR FC BL BR TFC TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_CENTER | SPEAKER_TOP_CENTER;
 				audioFormat->inputChannelCount = 8;
@@ -3406,6 +3440,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2D:
 				// FL FR LFE FC RL RR FCH TC
+				audioFormat->channelLayout = "FL FR FC LFE BL BR TFC TC";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_CENTER |
 					SPEAKER_TOP_CENTER;
@@ -3423,6 +3458,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2E:
 				// FL FR -- FC RL RR FLH FRH
+				audioFormat->channelLayout = "FL FR FC BL BR TFL TFR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_LEFT | SPEAKER_TOP_FRONT_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3439,6 +3475,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x2F:
 				// FL FR LFE FC RL RR FLH FRH
+				audioFormat->channelLayout = "FL FR FC LFE BL BR TFL TFR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT | SPEAKER_TOP_FRONT_LEFT |
 					SPEAKER_TOP_FRONT_RIGHT;
@@ -3456,6 +3493,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x30:
 				// FL FR -- FC RL RR FLW FRW (WIDE not supported by Windows, discarded)
+				audioFormat->channelLayout = "FL FR FC BL BR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_FRONT_CENTER |
 					SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3472,6 +3510,7 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 				break;
 			case 0x31:
 				// FL FR LFE FC RL RR FLW FRW (WIDE not supported by Windows, discarded)
+				audioFormat->channelLayout = "FL FR FC LFE BL BR";
 				audioFormat->channelMask = SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT | SPEAKER_LOW_FREQUENCY |
 					SPEAKER_FRONT_CENTER | SPEAKER_BACK_LEFT | SPEAKER_BACK_RIGHT;
 				audioFormat->inputChannelCount = 8;
@@ -3974,6 +4013,7 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
 
 	auto hChannel = mFilter->GetChannelHandle();
 	LoadSignal(&hChannel);
+	mFilter->OnAudioSignalLoaded(&mAudioSignal);
 
 	auto deviceType = mFilter->GetDeviceType();
 	if (deviceType == PRO)
@@ -4139,6 +4179,8 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		}
 
 		auto sigLoaded = LoadSignal(&hChannel);
+		mFilter->OnAudioSignalLoaded(&mAudioSignal);
+
 		if (S_OK != sigLoaded)
 		{
 			#ifndef NO_QUILL
@@ -4409,6 +4451,8 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					BACKOFF;
 					continue;
 				}
+
+				mFilter->OnAudioFormatLoaded(&mAudioFormat);
 			}
 
 			if (newAudioFormat.codec == PCM || mDataBurstPayloadSize > 0)

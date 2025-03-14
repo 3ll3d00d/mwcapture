@@ -14,15 +14,17 @@
  */
 #pragma once
 
-#define NOMINMAX
+#include <Windows.h>
+#include <Commctrl.h>
 #include <initguid.h>
 #include <streams.h>
+
 #include <string>
 
 
-// {3276202B-E5E0-4E02-8E8C-E36637B605CF}
-DEFINE_GUID(CLSID_SIGNAL_INFO_PROP,
-            0x3276202b, 0xe5e0, 0x4e02, 0x8e, 0x8c, 0xe3, 0x66, 0x37, 0xb6, 0x5, 0xcf);
+// {8DC689DB-68FE-4C30-AAE5-0E515CF9324C}
+DEFINE_GUID(CLSID_SignalInfoProps,
+    0x8dc689db, 0x68fe, 0x4c30, 0xaa, 0xe5, 0xe, 0x51, 0x5c, 0xf9, 0x32, 0x4c);
 
 
 // {6A505550-28B2-4668-BC2C-461E75A63BC4}
@@ -66,6 +68,21 @@ struct SIGNAL_INFO_VALUES
     double hdrWpY;
     double hdrMinDML;
     double hdrMaxDML;
+    bool audioInStatus;
+    bool audioInIsPcm;
+    unsigned char audioInBitDepth;
+    unsigned long audioInFs;
+    unsigned short audioInChannelMask;
+    unsigned char audioInChannelMap;
+    unsigned char audioInLfeLevel;
+    std::string audioOutChannelLayout;
+    unsigned char audioOutBitDepth;
+    std::string audioOutCodec;
+    unsigned long audioOutFs;
+    double audioOutLfeOffset;
+    int audioOutLfeChannelIndex;
+    unsigned short audioOutChannelCount;
+    uint16_t audioOutDataBurstSize;
 };
 
 

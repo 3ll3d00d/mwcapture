@@ -15,7 +15,6 @@
 #pragma once
 
 #define NOMINMAX
-
 constexpr auto not_present = 1024;
 
 #ifndef NO_QUILL
@@ -48,6 +47,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include "util.h"
 #include "signalinfo.h"
 #include "lavfilters_side_data.h"
+#include "ISpecifyPropertyPages2.h"
 
 // HDMI Audio Bitstream Codec Identification metadata
 
@@ -174,6 +174,7 @@ struct AUDIO_FORMAT
     WORD outputChannelCount{ 2 };
     std::array<int, 8> channelOffsets{ 0, 0, not_present, not_present, not_present, not_present, not_present, not_present };
     WORD channelMask{ KSAUDIO_SPEAKER_STEREO };
+    std::string channelLayout;
     int lfeChannelIndex{ not_present };
     double lfeLevelAdjustment{ 1.0 };
     Codec codec{ PCM };
@@ -251,7 +252,7 @@ class MagewellCaptureFilter final :
 	public IReferenceClock,
 	public IAMFilterMiscFlags,
 	public ISignalInfo,
-    public ISpecifyPropertyPages
+    public ISpecifyPropertyPages2
 {
 public:
 
@@ -272,6 +273,8 @@ public:
     void OnVideoSignalLoaded(VIDEO_SIGNAL* vs);
     void OnVideoFormatLoaded(VIDEO_FORMAT* vf);
     void OnHdrUpdated(MediaSideDataHDR* hdr);
+    void OnAudioSignalLoaded(AUDIO_SIGNAL* as);
+    void OnAudioFormatLoaded(AUDIO_FORMAT* af);
 
 private:
 
@@ -312,9 +315,10 @@ public:
     STDMETHODIMP GetSignalInfo(SIGNAL_INFO_VALUES* value) override;
 
 	//////////////////////////////////////////////////////////////////////////
-    //  ISpecifyPropertyPages
+    //  ISpecifyPropertyPages2
     //////////////////////////////////////////////////////////////////////////
     STDMETHODIMP GetPages(CAUUID* pPages) override;
+    STDMETHODIMP CreatePage(const GUID& guid, IPropertyPage** ppPage) override;
 
 private:
     DEVICE_INFO mDeviceInfo;

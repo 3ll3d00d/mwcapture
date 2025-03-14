@@ -31,7 +31,9 @@ CUnknown* CSignalInfoProp::CreateInstance(LPUNKNOWN punk, HRESULT* phr)
 	if (pNewObject == nullptr)
 	{
 		if (phr)
+		{
 			*phr = E_OUTOFMEMORY;
+		}
 	}
 
 	return pNewObject;
@@ -110,6 +112,38 @@ HRESULT CSignalInfoProp::OnActivate()
 			_snwprintf_s(buffer, _TRUNCATE, L"%.1f / %.1f", mSignalInfoValues.hdrMinDML, mSignalInfoValues.hdrMaxDML);
 			SendDlgItemMessage(m_Dlg, IDC_HDR_DML, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
 		}
+
+		_snwprintf_s(buffer, _TRUNCATE, L"%hs", mSignalInfoValues.audioInStatus ? "LOCKED" : "NONE");
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_SIGNAL_STATUS, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%hs", mSignalInfoValues.audioInIsPcm ? "Y" : "N");
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_PCM, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d bit", mSignalInfoValues.audioInBitDepth);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_BIT_DEPTH, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d", mSignalInfoValues.audioInChannelMask);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_CH_MASK, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%#04x", mSignalInfoValues.audioInChannelMap);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_CH_MAP, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d Hz", mSignalInfoValues.audioInFs);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_LFE_LEVEL, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%#04x", mSignalInfoValues.audioInLfeLevel);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_IN_LFE_LEVEL, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+
+		_snwprintf_s(buffer, _TRUNCATE, L"%hs", mSignalInfoValues.audioOutCodec.c_str());
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_CODEC, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d bit", mSignalInfoValues.audioOutBitDepth);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_BIT_DEPTH, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d", mSignalInfoValues.audioOutChannelCount);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_CH_COUNT, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%hs", mSignalInfoValues.audioOutChannelLayout.c_str());
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_CH_LAYOUT, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d Hz", mSignalInfoValues.audioOutFs);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_FS, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%.4f", mSignalInfoValues.audioOutLfeOffset);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_LFE_LEVEL, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d", mSignalInfoValues.audioOutLfeChannelIndex);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_LFE_CH, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+		_snwprintf_s(buffer, _TRUNCATE, L"%d", mSignalInfoValues.audioOutDataBurstSize);
+		SendDlgItemMessage(m_Dlg, IDC_AUDIO_OUT_BURST_SZ, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
 	}
 	return hr;
 }

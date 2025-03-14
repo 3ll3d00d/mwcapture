@@ -363,6 +363,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="ISpecifyPropertyPages2.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="signalinfo.h" />
     <ClInclude Include="lavfilters_side_data.h" />
