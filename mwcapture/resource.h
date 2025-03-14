@@ -60,13 +60,16 @@
 #define IDC_AUDIO_IN_CH_MAP             1055
 #define IDC_AUDIO_IN_FS                 1056
 #define IDC_AUDIO_IN_LFE_LEVEL          1057
+#define IDC_RADIO1                      1058
 #define IDC_AUDIO_OUT_CODEC_LABEL       1059
+#define IDC_VIDEO_OUT_TF                1060
 #define IDC_AUDIO_OUT_BIT_DEPTH_LABEL   1061
 #define IDC_AUDIO_OUT_CH_COUNT_LABEL    1062
 #define IDC_AUDIO_OUT_CH_LAYOUT_LABEL   1063
 #define IDC_AUDIO_OUT_FS_LABEL          1064
 #define IDC_AUDIO_OUT_LFE_LEVEL_LABEL   1065
 #define IDC_AUDIO_OUT_CODEC             1066
+#define IDC_VIDEO_OUT_TF_LABEL          1067
 #define IDC_AUDIO_OUT_BIT_DEPTH         1068
 #define IDC_AUDIO_OUT_CH_COUNT          1069
 #define IDC_AUDIO_OUT_CH_MAP            1070
@@ -77,6 +80,10 @@
 #define IDC_AUDIO_OUT_LFE_CH            1074
 #define IDC_AUDIO_OUT_BURST_SZ_LABEL    1075
 #define IDC_AUDIO_OUT_BURST_SZ          1076
+#define IDC_HDR_MAX_CLL_LABEL           1077
+#define IDC_HDR_MAX_FALL_LABEL          1078
+#define IDC_HDR_MAX_CLL                 1079
+#define IDC_HDR_MAX_FALL                1080
 
 // Next default values for new objects
 // 
@@ -84,7 +91,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        103
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1058
+#define _APS_NEXT_CONTROL_VALUE         1081
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

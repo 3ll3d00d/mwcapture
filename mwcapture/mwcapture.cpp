@@ -379,6 +379,11 @@ void MagewellCaptureFilter::OnVideoSignalLoaded(VIDEO_SIGNAL* vs)
 		mStatusInfo.inPixelLayout = "RGB 4:4:4";
 		break;
 	}
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(VIDEO_IN);
+	}
 }
 
 void MagewellCaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
@@ -459,9 +464,14 @@ void MagewellCaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
 	}
 
 	mStatusInfo.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(VIDEO_OUT);
+	}
 }
 
-void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr)
+void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr, MediaSideDataHDRContentLightLevel* light)
 {
 	if (hdr == nullptr)
 	{
@@ -480,18 +490,32 @@ void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr)
 		mStatusInfo.hdrWpY = hdr->white_point_y;
 		mStatusInfo.hdrMinDML = hdr->min_display_mastering_luminance;
 		mStatusInfo.hdrMaxDML = hdr->max_display_mastering_luminance;
+		mStatusInfo.hdrMaxCLL = light->MaxCLL;
+		mStatusInfo.hdrMaxFALL = light->MaxFALL;
+	}
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(HDR);
 	}
 }
 
 void MagewellCaptureFilter::OnAudioSignalLoaded(AUDIO_SIGNAL* as)
 {
-	mStatusInfo.audioInStatus = as->signalStatus.bChannelStatusValid;
+	// TODO always false, is it a bug in SDK?
+	// mStatusInfo.audioInStatus = as->signalStatus.bChannelStatusValid;
+	mStatusInfo.audioInStatus = as->signalStatus.cBitsPerSample > 0;
 	mStatusInfo.audioInIsPcm = as->signalStatus.bLPCM;
 	mStatusInfo.audioInBitDepth = as->signalStatus.cBitsPerSample;
 	mStatusInfo.audioInFs = as->signalStatus.dwSampleRate;
 	mStatusInfo.audioInChannelMask = as->signalStatus.wChannelValid;
 	mStatusInfo.audioInChannelMap = as->audioInfo.byChannelAllocation;
 	mStatusInfo.audioInLfeLevel = as->audioInfo.byLFEPlaybackLevel;
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(AUDIO_IN);
+	}
 }
 
 void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
@@ -500,10 +524,15 @@ void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
 	mStatusInfo.audioOutBitDepth = af->bitDepth;
 	mStatusInfo.audioOutCodec = codecNames[af->codec];
 	mStatusInfo.audioOutFs = af->fs;
-	mStatusInfo.audioOutLfeOffset = af->lfeLevelAdjustment;
-	mStatusInfo.audioOutLfeChannelIndex = af->lfeChannelIndex;
+	mStatusInfo.audioOutLfeOffset = af->lfeLevelAdjustment == unity ? 0 : -10;
+	mStatusInfo.audioOutLfeChannelIndex = af->lfeChannelIndex == not_present ? -1 : af->lfeChannelIndex;
 	mStatusInfo.audioOutChannelCount = af->outputChannelCount;
 	mStatusInfo.audioOutDataBurstSize = af->dataBurstSize;
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(AUDIO_OUT);
+	}
 }
 
 HRESULT MagewellCaptureFilter::GetTime(REFERENCE_TIME* pTime)
@@ -615,6 +644,12 @@ STDMETHODIMP MagewellCaptureFilter::Stop()
 STDMETHODIMP MagewellCaptureFilter::GetSignalInfo(SIGNAL_INFO_VALUES* value)
 {
 	*value = mStatusInfo;
+	return S_OK;
+}
+
+HRESULT MagewellCaptureFilter::SetCallback(ISignalInfoCB* cb)
+{
+	mInfoCallback = cb;
 	return S_OK;
 }
 
@@ -1455,7 +1490,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 					hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
 				#endif
 
-				pin->mFilter->OnHdrUpdated(&hdr);
+				pin->mFilter->OnHdrUpdated(&hdr, &hdrLightLevel);
 			}
 			else
 			{
@@ -4179,13 +4214,15 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 		}
 
 		auto sigLoaded = LoadSignal(&hChannel);
-		mFilter->OnAudioSignalLoaded(&mAudioSignal);
 
 		if (S_OK != sigLoaded)
 		{
 			#ifndef NO_QUILL
 			LOG_TRACE_L1(mLogger, "[{}] Unable to load signal, retry after backoff", mLogPrefix);
 			#endif
+
+			if (mSinceCodecChange > 0)
+				mFilter->OnAudioSignalLoaded(&mAudioSignal);
 
 			mSinceCodecChange = 0;
 			BACKOFF;
@@ -4197,6 +4234,9 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_WARNING(mLogger, "[{}] Reported bit depth is 0, retry after backoff", mLogPrefix);
 			#endif
 
+			if (mSinceCodecChange > 0)
+				mFilter->OnAudioSignalLoaded(&mAudioSignal);
+
 			mSinceCodecChange = 0;
 			BACKOFF;
 			continue;
@@ -4207,6 +4247,9 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_WARNING(mLogger, "[{}] Reported channel allocation is {}, retry after backoff", mLogPrefix, 
 				mAudioSignal.audioInfo.byChannelAllocation);
 			#endif
+
+			if (mSinceCodecChange > 0)
+				mFilter->OnAudioSignalLoaded(&mAudioSignal);
 
 			mSinceCodecChange = 0;
 			BACKOFF;
@@ -4222,8 +4265,12 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 			LOG_TRACE_L1(mLogger, "[{}] No output channels in signal, retry after backoff", mLogPrefix);
 			#endif
 
+			if (mSinceCodecChange > 0)
+				mFilter->OnAudioSignalLoaded(&mAudioSignal);
+
 			mSinceLast = 0;
 			mSinceCodecChange = 0;
+
 			BACKOFF;
 			continue;
 		}
@@ -4260,8 +4307,12 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					LOG_TRACE_L1(mLogger, "[{}] Audio signal change, retry after backoff", mLogPrefix);
 					#endif
 
+					if (mSinceCodecChange > 0)
+						mFilter->OnAudioSignalLoaded(&mAudioSignal);
+
 					mSinceLast = 0;
 					mSinceCodecChange = 0;
+
 					BACKOFF;
 					continue;
 				}
@@ -4271,6 +4322,9 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					#ifndef NO_QUILL
 					LOG_TRACE_L1(mLogger, "[{}] Audio input source change, retry after backoff", mLogPrefix);
 					#endif
+
+					if (mSinceCodecChange > 0)
+						mFilter->OnAudioSignalLoaded(&mAudioSignal);
 
 					mSinceLast = 0;
 					mSinceCodecChange = 0;
@@ -4452,6 +4506,7 @@ HRESULT MagewellAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFE
 					continue;
 				}
 
+				mFilter->OnAudioSignalLoaded(&mAudioSignal);
 				mFilter->OnAudioFormatLoaded(&mAudioFormat);
 			}
 

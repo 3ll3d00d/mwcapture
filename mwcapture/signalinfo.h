@@ -31,6 +31,11 @@ DEFINE_GUID(CLSID_SignalInfoProps,
 DEFINE_GUID(IID_ISignalInfo,
             0x6a505550, 0x28b2, 0x4668, 0xbc, 0x2c, 0x46, 0x1e, 0x75, 0xa6, 0x3b, 0xc4);
 
+// {4D6B8852-06A6-4997-BC07-3507BB77F748}
+DEFINE_GUID(IID_ISignalInfoCB,
+    0x4d6b8852, 0x6a6, 0x4997, 0xbc, 0x7, 0x35, 0x7, 0xbb, 0x77, 0xf7, 0x48);
+
+
 
 struct SIGNAL_INFO_VALUES
 {
@@ -68,6 +73,8 @@ struct SIGNAL_INFO_VALUES
     double hdrWpY;
     double hdrMinDML;
     double hdrMaxDML;
+    double hdrMaxCLL;
+    double hdrMaxFALL;
     bool audioInStatus;
     bool audioInIsPcm;
     unsigned char audioInBitDepth;
@@ -79,19 +86,36 @@ struct SIGNAL_INFO_VALUES
     unsigned char audioOutBitDepth;
     std::string audioOutCodec;
     unsigned long audioOutFs;
-    double audioOutLfeOffset;
+    short audioOutLfeOffset;
     int audioOutLfeChannelIndex;
     unsigned short audioOutChannelCount;
     uint16_t audioOutDataBurstSize;
 };
 
+enum ReloadType
+{
+    ALL,
+	AUDIO_IN,
+    AUDIO_OUT,
+    VIDEO_IN,
+    VIDEO_OUT,
+    HDR
+};
+
+interface __declspec(uuid("4D6B8852-06A6-4997-BC07-3507BB77F748")) ISignalInfoCB
+{
+    STDMETHOD(Reload)(ReloadType reload) = 0;
+};
 
 interface __declspec(uuid("6A505550-28B2-4668-BC2C-461E75A63BC4")) ISignalInfo : public IUnknown
 {
 	STDMETHOD(GetSignalInfo)(SIGNAL_INFO_VALUES* value) = 0;
+	STDMETHOD(SetCallback)(ISignalInfoCB* cb) = 0;
 };
 
-class CSignalInfoProp : public CBasePropertyPage
+class CSignalInfoProp :
+	public ISignalInfoCB,
+	public CBasePropertyPage
 {
 public:
 	// Provide the way for COM to create a Filter object
@@ -105,6 +129,7 @@ public:
 	HRESULT OnDisconnect() override;
 	HRESULT OnApplyChanges() override;
 	INT_PTR OnReceiveMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) override;
+    HRESULT Reload(ReloadType reload) override;
 
 private:
 	HRESULT LoadData();

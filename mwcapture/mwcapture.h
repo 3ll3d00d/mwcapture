@@ -272,7 +272,7 @@ public:
 	// Callbacks to update the prop page data
     void OnVideoSignalLoaded(VIDEO_SIGNAL* vs);
     void OnVideoFormatLoaded(VIDEO_FORMAT* vf);
-    void OnHdrUpdated(MediaSideDataHDR* hdr);
+    void OnHdrUpdated(MediaSideDataHDR* hdr, MediaSideDataHDRContentLightLevel* light);
     void OnAudioSignalLoaded(AUDIO_SIGNAL* as);
     void OnAudioFormatLoaded(AUDIO_FORMAT* af);
 
@@ -313,6 +313,7 @@ public:
     //  ISignalInfo
     //////////////////////////////////////////////////////////////////////////
     STDMETHODIMP GetSignalInfo(SIGNAL_INFO_VALUES* value) override;
+    STDMETHODIMP SetCallback(ISignalInfoCB* cb) override;
 
 	//////////////////////////////////////////////////////////////////////////
     //  ISpecifyPropertyPages2
@@ -325,6 +326,7 @@ private:
     BOOL mInited;
     MWReferenceClock* mClock;
     SIGNAL_INFO_VALUES mStatusInfo{};
+    ISignalInfoCB* mInfoCallback = nullptr;
 
 #ifndef NO_QUILL
     std::string mLogPrefix = "MagewellCaptureFilter";
