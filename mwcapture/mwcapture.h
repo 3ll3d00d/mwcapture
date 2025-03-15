@@ -312,7 +312,7 @@ public:
     //////////////////////////////////////////////////////////////////////////
     //  ISignalInfo
     //////////////////////////////////////////////////////////////////////////
-    STDMETHODIMP GetSignalInfo(SIGNAL_INFO_VALUES* value) override;
+    STDMETHODIMP Reload() override;
     STDMETHODIMP SetCallback(ISignalInfoCB* cb) override;
 
 	//////////////////////////////////////////////////////////////////////////
@@ -325,7 +325,11 @@ private:
     DEVICE_INFO mDeviceInfo;
     BOOL mInited;
     MWReferenceClock* mClock;
-    SIGNAL_INFO_VALUES mStatusInfo{};
+    AUDIO_INPUT_STATUS mAudioInputStatus{};
+    AUDIO_OUTPUT_STATUS mAudioOutputStatus{};
+    VIDEO_INPUT_STATUS mVideoInputStatus{};
+    VIDEO_OUTPUT_STATUS mVideoOutputStatus{};
+    HDR_STATUS mHdrStatus{};
     ISignalInfoCB* mInfoCallback = nullptr;
 
 #ifndef NO_QUILL

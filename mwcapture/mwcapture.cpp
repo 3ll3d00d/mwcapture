@@ -288,186 +288,186 @@ void MagewellCaptureFilter::GetReferenceTime(REFERENCE_TIME* rt) const
 
 void MagewellCaptureFilter::OnVideoSignalLoaded(VIDEO_SIGNAL* vs)
 {
-	mStatusInfo.inX = vs->signalStatus.cx;
-	mStatusInfo.inY = vs->signalStatus.cy;
-	mStatusInfo.inAspectX = vs->signalStatus.nAspectX;
-	mStatusInfo.inAspectY = vs->signalStatus.nAspectY;
-	mStatusInfo.inFps = vs->signalStatus.dwFrameDuration > 0 ? 10000000.0 / vs->signalStatus.dwFrameDuration : 0.0;
+	mVideoInputStatus.inX = vs->signalStatus.cx;
+	mVideoInputStatus.inY = vs->signalStatus.cy;
+	mVideoInputStatus.inAspectX = vs->signalStatus.nAspectX;
+	mVideoInputStatus.inAspectY = vs->signalStatus.nAspectY;
+	mVideoInputStatus.inFps = vs->signalStatus.dwFrameDuration > 0 ? 10000000.0 / vs->signalStatus.dwFrameDuration : 0.0;
 
 	switch (vs->signalStatus.state)
 	{
 	case MWCAP_VIDEO_SIGNAL_NONE:
-		mStatusInfo.signalStatus = "No Signal";
+		mVideoInputStatus.signalStatus = "No Signal";
 		break;
 	case MWCAP_VIDEO_SIGNAL_UNSUPPORTED:
-		mStatusInfo.signalStatus = "Unsupported Signal";
+		mVideoInputStatus.signalStatus = "Unsupported Signal";
 		break;
 	case MWCAP_VIDEO_SIGNAL_LOCKING:
-		mStatusInfo.signalStatus = "Locking";
+		mVideoInputStatus.signalStatus = "Locking";
 		break;
 	case MWCAP_VIDEO_SIGNAL_LOCKED:
-		mStatusInfo.signalStatus = "Locked";
+		mVideoInputStatus.signalStatus = "Locked";
 		break;
 	}
 
 	switch (vs->signalStatus.colorFormat)
 	{
 	case MWCAP_VIDEO_COLOR_FORMAT_UNKNOWN:
-		mStatusInfo.inColourFormat = "?";
+		mVideoInputStatus.inColourFormat = "?";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_RGB:
-		mStatusInfo.inColourFormat = "RGB";
+		mVideoInputStatus.inColourFormat = "RGB";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV601:
-		mStatusInfo.inColourFormat = "YUV601";
+		mVideoInputStatus.inColourFormat = "YUV601";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV709:
-		mStatusInfo.inColourFormat = "YUV709";
+		mVideoInputStatus.inColourFormat = "YUV709";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020:
-		mStatusInfo.inColourFormat = "YUV2020";
+		mVideoInputStatus.inColourFormat = "YUV2020";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020C:
-		mStatusInfo.inColourFormat = "YUV2020C";
+		mVideoInputStatus.inColourFormat = "YUV2020C";
 		break;
 	}
 
 	switch (vs->signalStatus.quantRange)
 	{
 	case MWCAP_VIDEO_QUANTIZATION_UNKNOWN:
-		mStatusInfo.inQuantisation = "?";
+		mVideoInputStatus.inQuantisation = "?";
 		break;
 	case MWCAP_VIDEO_QUANTIZATION_LIMITED:
-		mStatusInfo.inQuantisation = "Limited";
+		mVideoInputStatus.inQuantisation = "Limited";
 		break;
 	case MWCAP_VIDEO_QUANTIZATION_FULL:
-		mStatusInfo.inQuantisation = "Full";
+		mVideoInputStatus.inQuantisation = "Full";
 		break;
 	}
 
 	switch (vs->signalStatus.satRange)
 	{
 	case MWCAP_VIDEO_SATURATION_UNKNOWN:
-		mStatusInfo.inSaturation = "?";
+		mVideoInputStatus.inSaturation = "?";
 		break;
 	case MWCAP_VIDEO_SATURATION_LIMITED:
-		mStatusInfo.inSaturation = "Limited";
+		mVideoInputStatus.inSaturation = "Limited";
 		break;
 	case MWCAP_VIDEO_SATURATION_FULL:
-		mStatusInfo.inSaturation = "Full";
+		mVideoInputStatus.inSaturation = "Full";
 		break;
 	case MWCAP_VIDEO_SATURATION_EXTENDED_GAMUT:
-		mStatusInfo.inSaturation = "Extended";
+		mVideoInputStatus.inSaturation = "Extended";
 		break;
 	}
 
-	mStatusInfo.validSignal = vs->inputStatus.bValid;
-	mStatusInfo.inBitDepth = vs->inputStatus.hdmiStatus.byBitDepth;
+	mVideoInputStatus.validSignal = vs->inputStatus.bValid;
+	mVideoInputStatus.inBitDepth = vs->inputStatus.hdmiStatus.byBitDepth;
 
 	switch (vs->inputStatus.hdmiStatus.pixelEncoding)
 	{
 	case HDMI_ENCODING_YUV_420:
-		mStatusInfo.inPixelLayout = "YUV 4:2:0";
+		mVideoInputStatus.inPixelLayout = "YUV 4:2:0";
 		break;
 	case HDMI_ENCODING_YUV_422:
-		mStatusInfo.inPixelLayout = "YUV 4:2:2";
+		mVideoInputStatus.inPixelLayout = "YUV 4:2:2";
 		break;
 	case HDMI_ENCODING_YUV_444:
-		mStatusInfo.inPixelLayout = "YUV 4:4:4";
+		mVideoInputStatus.inPixelLayout = "YUV 4:4:4";
 		break;
 	case HDMI_ENCODING_RGB_444:
-		mStatusInfo.inPixelLayout = "RGB 4:4:4";
+		mVideoInputStatus.inPixelLayout = "RGB 4:4:4";
 		break;
 	}
 
 	if (mInfoCallback != nullptr)
 	{
-		mInfoCallback->Reload(VIDEO_IN);
+		mInfoCallback->Reload(&mVideoInputStatus);
 	}
 }
 
 void MagewellCaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
 {
-	mStatusInfo.outX = vf->cx;
-	mStatusInfo.outY = vf->cy;
-	mStatusInfo.outAspectX = vf->aspectX;
-	mStatusInfo.outAspectY = vf->aspectY;
-	mStatusInfo.outFps = vf->fps;
+	mVideoOutputStatus.outX = vf->cx;
+	mVideoOutputStatus.outY = vf->cy;
+	mVideoOutputStatus.outAspectX = vf->aspectX;
+	mVideoOutputStatus.outAspectY = vf->aspectY;
+	mVideoOutputStatus.outFps = vf->fps;
 
 	switch (vf->colourFormat)
 	{
 	case MWCAP_VIDEO_COLOR_FORMAT_UNKNOWN:
-		mStatusInfo.outColourFormat = "?";
+		mVideoOutputStatus.outColourFormat = "?";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_RGB:
-		mStatusInfo.outColourFormat = "RGB";
+		mVideoOutputStatus.outColourFormat = "RGB";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV601:
-		mStatusInfo.outColourFormat = "YUV601";
+		mVideoOutputStatus.outColourFormat = "YUV601";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV709:
-		mStatusInfo.outColourFormat = "YUV709";
+		mVideoOutputStatus.outColourFormat = "YUV709";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020:
-		mStatusInfo.outColourFormat = "YUV2020";
+		mVideoOutputStatus.outColourFormat = "YUV2020";
 		break;
 	case MWCAP_VIDEO_COLOR_FORMAT_YUV2020C:
-		mStatusInfo.outColourFormat = "YUV2020C";
+		mVideoOutputStatus.outColourFormat = "YUV2020C";
 		break;
 	}
 
 	switch (vf->quantization)
 	{
 	case MWCAP_VIDEO_QUANTIZATION_UNKNOWN:
-		mStatusInfo.outQuantisation = "?";
+		mVideoOutputStatus.outQuantisation = "?";
 		break;
 	case MWCAP_VIDEO_QUANTIZATION_LIMITED:
-		mStatusInfo.outQuantisation = "Limited";
+		mVideoOutputStatus.outQuantisation = "Limited";
 		break;
 	case MWCAP_VIDEO_QUANTIZATION_FULL:
-		mStatusInfo.outQuantisation = "Full";
+		mVideoOutputStatus.outQuantisation = "Full";
 		break;
 	}
 
 	switch (vf->saturation)
 	{
 	case MWCAP_VIDEO_SATURATION_UNKNOWN:
-		mStatusInfo.outSaturation = "?";
+		mVideoOutputStatus.outSaturation = "?";
 		break;
 	case MWCAP_VIDEO_SATURATION_LIMITED:
-		mStatusInfo.outSaturation = "Limited";
+		mVideoOutputStatus.outSaturation = "Limited";
 		break;
 	case MWCAP_VIDEO_SATURATION_FULL:
-		mStatusInfo.outSaturation = "Full";
+		mVideoOutputStatus.outSaturation = "Full";
 		break;
 	case MWCAP_VIDEO_SATURATION_EXTENDED_GAMUT:
-		mStatusInfo.outSaturation = "Extended";
+		mVideoOutputStatus.outSaturation = "Extended";
 		break;
 	}
 
-	mStatusInfo.outBitDepth = vf->bitDepth;
+	mVideoOutputStatus.outBitDepth = vf->bitDepth;
 
 	switch (vf->pixelEncoding)
 	{
 	case HDMI_ENCODING_YUV_420:
-		mStatusInfo.outPixelLayout = "YUV 4:2:0";
+		mVideoOutputStatus.outPixelLayout = "YUV 4:2:0";
 		break;
 	case HDMI_ENCODING_YUV_422:
-		mStatusInfo.outPixelLayout = "YUV 4:2:2";
+		mVideoOutputStatus.outPixelLayout = "YUV 4:2:2";
 		break;
 	case HDMI_ENCODING_YUV_444:
-		mStatusInfo.outPixelLayout = "YUV 4:4:4";
+		mVideoOutputStatus.outPixelLayout = "YUV 4:4:4";
 		break;
 	case HDMI_ENCODING_RGB_444:
-		mStatusInfo.outPixelLayout = "RGB 4:4:4";
+		mVideoOutputStatus.outPixelLayout = "RGB 4:4:4";
 		break;
 	}
 
-	mStatusInfo.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+	mVideoOutputStatus.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
 
 	if (mInfoCallback != nullptr)
 	{
-		mInfoCallback->Reload(VIDEO_OUT);
+		mInfoCallback->Reload(&mVideoOutputStatus);
 	}
 }
 
@@ -475,28 +475,28 @@ void MagewellCaptureFilter::OnHdrUpdated(MediaSideDataHDR* hdr, MediaSideDataHDR
 {
 	if (hdr == nullptr)
 	{
-		mStatusInfo.hdrOn = false;
+		mHdrStatus.hdrOn = false;
 	}
 	else
 	{
-		mStatusInfo.hdrOn = true;
-		mStatusInfo.hdrPrimaryRX = hdr->display_primaries_x[2];
-		mStatusInfo.hdrPrimaryRY = hdr->display_primaries_y[2];
-		mStatusInfo.hdrPrimaryGX = hdr->display_primaries_x[0];
-		mStatusInfo.hdrPrimaryGY = hdr->display_primaries_y[0];
-		mStatusInfo.hdrPrimaryBX = hdr->display_primaries_x[1];
-		mStatusInfo.hdrPrimaryBY = hdr->display_primaries_y[1];
-		mStatusInfo.hdrWpX = hdr->white_point_x;
-		mStatusInfo.hdrWpY = hdr->white_point_y;
-		mStatusInfo.hdrMinDML = hdr->min_display_mastering_luminance;
-		mStatusInfo.hdrMaxDML = hdr->max_display_mastering_luminance;
-		mStatusInfo.hdrMaxCLL = light->MaxCLL;
-		mStatusInfo.hdrMaxFALL = light->MaxFALL;
+		mHdrStatus.hdrOn = true;
+		mHdrStatus.hdrPrimaryRX = hdr->display_primaries_x[2];
+		mHdrStatus.hdrPrimaryRY = hdr->display_primaries_y[2];
+		mHdrStatus.hdrPrimaryGX = hdr->display_primaries_x[0];
+		mHdrStatus.hdrPrimaryGY = hdr->display_primaries_y[0];
+		mHdrStatus.hdrPrimaryBX = hdr->display_primaries_x[1];
+		mHdrStatus.hdrPrimaryBY = hdr->display_primaries_y[1];
+		mHdrStatus.hdrWpX = hdr->white_point_x;
+		mHdrStatus.hdrWpY = hdr->white_point_y;
+		mHdrStatus.hdrMinDML = hdr->min_display_mastering_luminance;
+		mHdrStatus.hdrMaxDML = hdr->max_display_mastering_luminance;
+		mHdrStatus.hdrMaxCLL = light->MaxCLL;
+		mHdrStatus.hdrMaxFALL = light->MaxFALL;
 	}
 
 	if (mInfoCallback != nullptr)
 	{
-		mInfoCallback->Reload(HDR);
+		mInfoCallback->Reload(&mHdrStatus);
 	}
 }
 
@@ -504,34 +504,42 @@ void MagewellCaptureFilter::OnAudioSignalLoaded(AUDIO_SIGNAL* as)
 {
 	// TODO always false, is it a bug in SDK?
 	// mStatusInfo.audioInStatus = as->signalStatus.bChannelStatusValid;
-	mStatusInfo.audioInStatus = as->signalStatus.cBitsPerSample > 0;
-	mStatusInfo.audioInIsPcm = as->signalStatus.bLPCM;
-	mStatusInfo.audioInBitDepth = as->signalStatus.cBitsPerSample;
-	mStatusInfo.audioInFs = as->signalStatus.dwSampleRate;
-	mStatusInfo.audioInChannelMask = as->signalStatus.wChannelValid;
-	mStatusInfo.audioInChannelMap = as->audioInfo.byChannelAllocation;
-	mStatusInfo.audioInLfeLevel = as->audioInfo.byLFEPlaybackLevel;
+	mAudioInputStatus.audioInStatus = as->signalStatus.cBitsPerSample > 0;
+	mAudioInputStatus.audioInIsPcm = as->signalStatus.bLPCM;
+	mAudioInputStatus.audioInBitDepth = as->signalStatus.cBitsPerSample;
+	mAudioInputStatus.audioInFs = as->signalStatus.dwSampleRate;
+	mAudioInputStatus.audioInChannelPairs = as->signalStatus.wChannelValid;
+	mAudioInputStatus.audioInChannelMap = as->audioInfo.byChannelAllocation;
+	mAudioInputStatus.audioInLfeLevel = as->audioInfo.byLFEPlaybackLevel;
 
 	if (mInfoCallback != nullptr)
 	{
-		mInfoCallback->Reload(AUDIO_IN);
+		mInfoCallback->Reload(&mAudioInputStatus);
 	}
 }
 
 void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
 {
-	mStatusInfo.audioOutChannelLayout = af->channelLayout;
-	mStatusInfo.audioOutBitDepth = af->bitDepth;
-	mStatusInfo.audioOutCodec = codecNames[af->codec];
-	mStatusInfo.audioOutFs = af->fs;
-	mStatusInfo.audioOutLfeOffset = af->lfeLevelAdjustment == unity ? 0 : -10;
-	mStatusInfo.audioOutLfeChannelIndex = af->lfeChannelIndex == not_present ? -1 : af->lfeChannelIndex;
-	mStatusInfo.audioOutChannelCount = af->outputChannelCount;
-	mStatusInfo.audioOutDataBurstSize = af->dataBurstSize;
+	mAudioOutputStatus.audioOutChannelLayout = af->channelLayout;
+	mAudioOutputStatus.audioOutBitDepth = af->bitDepth;
+	mAudioOutputStatus.audioOutCodec = codecNames[af->codec];
+	mAudioOutputStatus.audioOutFs = af->fs;
+	constexpr double epsilon = 1e-6;
+	mAudioOutputStatus.audioOutLfeOffset = std::abs(af->lfeLevelAdjustment - unity) <= epsilon * std::abs(af->lfeLevelAdjustment) ? 0 : -10;
+	if (af->lfeChannelIndex == not_present)
+	{
+		mAudioOutputStatus.audioOutLfeChannelIndex = -1;
+	}
+	else
+	{
+		mAudioOutputStatus.audioOutLfeChannelIndex = af->lfeChannelIndex + af->channelOffsets[af->lfeChannelIndex];
+	}
+	mAudioOutputStatus.audioOutChannelCount = af->outputChannelCount;
+	mAudioOutputStatus.audioOutDataBurstSize = af->dataBurstSize;
 
 	if (mInfoCallback != nullptr)
 	{
-		mInfoCallback->Reload(AUDIO_OUT);
+		mInfoCallback->Reload(&mAudioOutputStatus);
 	}
 }
 
@@ -641,10 +649,18 @@ STDMETHODIMP MagewellCaptureFilter::Stop()
 	return CBaseFilter::Stop();
 }
 
-STDMETHODIMP MagewellCaptureFilter::GetSignalInfo(SIGNAL_INFO_VALUES* value)
+HRESULT MagewellCaptureFilter::Reload()
 {
-	*value = mStatusInfo;
-	return S_OK;
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(&mAudioInputStatus);
+		mInfoCallback->Reload(&mAudioOutputStatus);
+		mInfoCallback->Reload(&mVideoInputStatus);
+		mInfoCallback->Reload(&mVideoOutputStatus);
+		mInfoCallback->Reload(&mHdrStatus);
+		return S_OK;
+	}
+	return E_FAIL;
 }
 
 HRESULT MagewellCaptureFilter::SetCallback(ISignalInfoCB* cb)

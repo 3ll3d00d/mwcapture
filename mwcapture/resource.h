@@ -60,7 +60,6 @@
 #define IDC_AUDIO_IN_CH_MAP             1055
 #define IDC_AUDIO_IN_FS                 1056
 #define IDC_AUDIO_IN_LFE_LEVEL          1057
-#define IDC_RADIO1                      1058
 #define IDC_AUDIO_OUT_CODEC_LABEL       1059
 #define IDC_VIDEO_OUT_TF                1060
 #define IDC_AUDIO_OUT_BIT_DEPTH_LABEL   1061
@@ -72,7 +71,6 @@
 #define IDC_VIDEO_OUT_TF_LABEL          1067
 #define IDC_AUDIO_OUT_BIT_DEPTH         1068
 #define IDC_AUDIO_OUT_CH_COUNT          1069
-#define IDC_AUDIO_OUT_CH_MAP            1070
 #define IDC_AUDIO_OUT_CH_LAYOUT         1070
 #define IDC_AUDIO_OUT_FS                1071
 #define IDC_AUDIO_OUT_LFE_LEVEL         1072
