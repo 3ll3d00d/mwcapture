@@ -1441,78 +1441,85 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 			pin->mSendMediaType = FALSE;
 		}
 		// Update once per second
-		if (pin->mVideoFormat.hdrMeta.exists && (endTime > pin->mLastSentHdrMetaAt + oneSecondIn100ns)) 
+		if (endTime > pin->mLastSentHdrMetaAt + oneSecondIn100ns)
 		{
-			// This can fail if you have a filter behind this which does not understand side data
-			IMediaSideData* pMediaSideData = nullptr;
-			if (SUCCEEDED(pms->QueryInterface(&pMediaSideData)))
+			pin->mLastSentHdrMetaAt = endTime;
+			if (pin->mVideoFormat.hdrMeta.exists)
 			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] Updating HDR meta in frame {}, last update at {}", pin->mLogPrefix,
-					pin->mFrameCounter, pin->mLastSentHdrMetaAt);
-				#endif
+				// This can fail if you have a filter behind this which does not understand side data
+				IMediaSideData* pMediaSideData = nullptr;
+				if (SUCCEEDED(pms->QueryInterface(&pMediaSideData)))
+				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(pin->mLogger, "[{}] Updating HDR meta in frame {}, last update at {}", pin->mLogPrefix,
+						pin->mFrameCounter, pin->mLastSentHdrMetaAt);
+					#endif
 
-				pin->mLastSentHdrMetaAt = endTime;
-				MediaSideDataHDR hdr;
-				ZeroMemory(&hdr, sizeof(hdr));
+					MediaSideDataHDR hdr;
+					ZeroMemory(&hdr, sizeof(hdr));
 
-				hdr.display_primaries_x[0] = pin->mVideoFormat.hdrMeta.g_primary_x *
-					chromaticity_scale_factor;
-				hdr.display_primaries_x[1] = pin->mVideoFormat.hdrMeta.b_primary_x *
-					chromaticity_scale_factor;
-				hdr.display_primaries_x[2] = pin->mVideoFormat.hdrMeta.r_primary_x *
-					chromaticity_scale_factor;
-				hdr.display_primaries_y[0] = pin->mVideoFormat.hdrMeta.g_primary_y *
-					chromaticity_scale_factor;
-				hdr.display_primaries_y[1] = pin->mVideoFormat.hdrMeta.b_primary_y *
-					chromaticity_scale_factor;
-				hdr.display_primaries_y[2] = pin->mVideoFormat.hdrMeta.r_primary_y *
-					chromaticity_scale_factor;
+					hdr.display_primaries_x[0] = pin->mVideoFormat.hdrMeta.g_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_x[1] = pin->mVideoFormat.hdrMeta.b_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_x[2] = pin->mVideoFormat.hdrMeta.r_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[0] = pin->mVideoFormat.hdrMeta.g_primary_y *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[1] = pin->mVideoFormat.hdrMeta.b_primary_y *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[2] = pin->mVideoFormat.hdrMeta.r_primary_y *
+						chromaticity_scale_factor;
 
-				hdr.white_point_x = pin->mVideoFormat.hdrMeta.whitepoint_x * chromaticity_scale_factor;
-				hdr.white_point_y = pin->mVideoFormat.hdrMeta.whitepoint_y * chromaticity_scale_factor;
+					hdr.white_point_x = pin->mVideoFormat.hdrMeta.whitepoint_x * chromaticity_scale_factor;
+					hdr.white_point_y = pin->mVideoFormat.hdrMeta.whitepoint_y * chromaticity_scale_factor;
 
-				hdr.max_display_mastering_luminance = pin->mVideoFormat.hdrMeta.maxDML *
-					high_luminance_scale_factor;
-				hdr.min_display_mastering_luminance = pin->mVideoFormat.hdrMeta.minDML *
-					low_luminance_scale_factor;
+					hdr.max_display_mastering_luminance = pin->mVideoFormat.hdrMeta.maxDML *
+						high_luminance_scale_factor;
+					hdr.min_display_mastering_luminance = pin->mVideoFormat.hdrMeta.minDML *
+						low_luminance_scale_factor;
 
-				pMediaSideData->SetSideData(IID_MediaSideDataHDR, reinterpret_cast<const BYTE*>(&hdr),
-					sizeof(hdr));
+					pMediaSideData->SetSideData(IID_MediaSideDataHDR, reinterpret_cast<const BYTE*>(&hdr),
+						sizeof(hdr));
 
-				MediaSideDataHDRContentLightLevel hdrLightLevel;
-				ZeroMemory(&hdrLightLevel, sizeof(hdrLightLevel));
+					MediaSideDataHDRContentLightLevel hdrLightLevel;
+					ZeroMemory(&hdrLightLevel, sizeof(hdrLightLevel));
 
-				hdrLightLevel.MaxCLL = pin->mVideoFormat.hdrMeta.maxCLL;
-				hdrLightLevel.MaxFALL = pin->mVideoFormat.hdrMeta.maxFALL;
+					hdrLightLevel.MaxCLL = pin->mVideoFormat.hdrMeta.maxCLL;
+					hdrLightLevel.MaxFALL = pin->mVideoFormat.hdrMeta.maxFALL;
 
-				pMediaSideData->SetSideData(IID_MediaSideDataHDRContentLightLevel,
-					reinterpret_cast<const BYTE*>(&hdrLightLevel),
-					sizeof(hdrLightLevel));
-				pMediaSideData->Release();
+					pMediaSideData->SetSideData(IID_MediaSideDataHDRContentLightLevel,
+						reinterpret_cast<const BYTE*>(&hdrLightLevel),
+						sizeof(hdrLightLevel));
+					pMediaSideData->Release();
 
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: R {:.4f} {:.4f}", pin->mLogPrefix,
-					hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: G {:.4f} {:.4f}", pin->mLogPrefix,
-					hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: B {:.4f} {:.4f}", pin->mLogPrefix,
-					hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: W {:.4f} {:.4f}", pin->mLogPrefix,
-					hdr.white_point_x, hdr.white_point_y);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: DML {} {}", pin->mLogPrefix,
-					hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
-				LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", pin->mLogPrefix,
-					hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
-				#endif
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: R {:.4f} {:.4f}", pin->mLogPrefix,
+						hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: G {:.4f} {:.4f}", pin->mLogPrefix,
+						hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: B {:.4f} {:.4f}", pin->mLogPrefix,
+						hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: W {:.4f} {:.4f}", pin->mLogPrefix,
+						hdr.white_point_x, hdr.white_point_y);
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: DML {} {}", pin->mLogPrefix,
+						hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
+					LOG_TRACE_L1(pin->mLogger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", pin->mLogPrefix,
+						hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
+					#endif
 
-				pin->mFilter->OnHdrUpdated(&hdr, &hdrLightLevel);
+					pin->mFilter->OnHdrUpdated(&hdr, &hdrLightLevel);
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(pin->mLogger, "[{}] HDR meta to send via MediaSideDataHDR but not supported by MediaSample", pin->mLogPrefix);
+					#endif
+				}
 			}
 			else
 			{
-				#ifndef NO_QUILL
-				LOG_WARNING(pin->mLogger, "[{}] HDR meta to send via MediaSideDataHDR but not supported by MediaSample", pin->mLogPrefix);
-				#endif
+				pin->mFilter->OnHdrUpdated(nullptr, nullptr);
 			}
 		}
 	}
