@@ -60,13 +60,13 @@ constexpr auto low_luminance_scale_factor = 0.0001;
 
 // bit depth -> pixel encoding -> fourcc
 constexpr DWORD fourcc[3][4] = {
-	// RGB444, YUV422, YUV444, YUY420, NONE
-	{MWFOURCC_BGR24, MWFOURCC_NV16, MWFOURCC_V308, MWFOURCC_NV12}, // 8  bit
+	// RGB444, YUV422, YUV444, YUY420
+	{MWFOURCC_BGR24, MWFOURCC_NV16, MWFOURCC_AYUV, MWFOURCC_NV12}, // 8  bit
 	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 10 bit
 	{MWFOURCC_BGR10, MWFOURCC_P210, MWFOURCC_AYUV, MWFOURCC_P010}, // 12 bit
 };
 constexpr std::string_view fourccName[3][4] = {
-	{"BGR24", "NV16", "V308", "NV12"},
+	{"BGR24", "NV16", "AYUV", "NV12"},
 	{"BGR10", "P210", "AYUV", "P010"},
 	{"BGR10", "P210", "AYUV", "P010"},
 };
