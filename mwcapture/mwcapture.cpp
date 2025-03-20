@@ -2001,21 +2001,26 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 		DWORD tPdwValidFlag = 0;
 		MWGetHDMIInfoFrameValidFlag(*pChannel, &tPdwValidFlag);
 		HDMI_INFOFRAME_PACKET pkt;
+		auto readPacket = false;
 		if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_HDR)
 		{
-			MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_HDR, &pkt);
-			if (!mHasHdrInfoFrame)
+			if (MW_SUCCEEDED == MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_HDR, &pkt))
 			{
-				#ifndef NO_QUILL
-				LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF,
-					pkt.hdrInfoFramePayload.byEOTF);
-				#endif
-				mHasHdrInfoFrame = true;
+				if (!mHasHdrInfoFrame)
+				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(mLogger, "[{}] HDR Infoframe is present tf: {} to {}", mLogPrefix, mVideoSignal.hdrInfo.byEOTF,
+						pkt.hdrInfoFramePayload.byEOTF);
+					#endif
+					mHasHdrInfoFrame = true;
+				}
+				mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
+				readPacket = true;
 			}
-			mVideoSignal.hdrInfo = pkt.hdrInfoFramePayload;
 		}
-		else
+		if (!readPacket)
 		{
+			
 			if (mHasHdrInfoFrame)
 			{
 				#ifndef NO_QUILL
@@ -2025,12 +2030,17 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 			}
 			mVideoSignal.hdrInfo = {};
 		}
+
+		readPacket = false;
 		if (tPdwValidFlag & MWCAP_HDMI_INFOFRAME_MASK_AVI)
 		{
-			MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_AVI, &pkt);
-			mVideoSignal.aviInfo = pkt.aviInfoFramePayload;
+			if (MW_SUCCEEDED == MWGetHDMIInfoFramePacket(*pChannel, MWCAP_HDMI_INFOFRAME_ID_AVI, &pkt))
+			{
+				mVideoSignal.aviInfo = pkt.aviInfoFramePayload;
+				readPacket = true;
+			}
 		}
-		else
+		if (!readPacket)
 		{
 			mVideoSignal.aviInfo = {};
 		}
