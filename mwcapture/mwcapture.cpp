@@ -37,6 +37,8 @@
 #include <initguid.h>
 
 #include <cmath>
+// std::reverse
+#include <algorithm>
 
 #ifdef _DEBUG
 #define MIN_LOG_LEVEL quill::LogLevel::TraceL3
@@ -263,6 +265,7 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	else
 	{
 		mDeviceInfo = *diToUse;
+		OnDeviceSelected();
 	}
 
 	mClock = new MWReferenceClock(phr, mDeviceInfo.hChannel, mDeviceInfo.deviceType == PRO);
@@ -463,6 +466,7 @@ void MagewellCaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
 		break;
 	}
 
+	mVideoOutputStatus.outPixelStructure = vf->pixelStructureName;
 	mVideoOutputStatus.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
 
 	if (mInfoCallback != nullptr)
@@ -541,6 +545,15 @@ void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
 	{
 		mInfoCallback->Reload(&mAudioOutputStatus);
 	}
+}
+
+void MagewellCaptureFilter::OnDeviceSelected()
+{
+	mDeviceStatus.deviceId = mDeviceInfo.deviceType == USB ? L"USB " : L"PRO ";
+	mDeviceStatus.deviceId += std::wstring{ mDeviceInfo.serialNo.begin(), mDeviceInfo.serialNo.end() };
+	mDeviceStatus.deviceId += L" [";
+	mDeviceStatus.deviceId += std::wstring{ mDeviceInfo.devicePath };
+	mDeviceStatus.deviceId += L"]";
 }
 
 HRESULT MagewellCaptureFilter::GetTime(REFERENCE_TIME* pTime)
@@ -1426,6 +1439,13 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 		pms->SetTime(&startTime, &endTime);
 		pms->SetSyncPoint(TRUE);
 		pin->mFrameCounter++;
+
+		if (pin->mVideoFormat.pixelStructure == MWFOURCC_AYUV)
+		{
+			// TODO endianness is wrong so flip the bytes
+			BYTE* istart = pmsData, * iend = istart + pin->mVideoFormat.imageSize;
+			std::reverse(istart, iend);
+		}
 
 		#ifndef NO_QUILL
 		LOG_TRACE_L1(pin->mLogger, "[{}] Captured video frame {} at {}", pin->mLogPrefix,

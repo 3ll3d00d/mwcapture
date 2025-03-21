@@ -275,6 +275,7 @@ public:
     void OnHdrUpdated(MediaSideDataHDR* hdr, MediaSideDataHDRContentLightLevel* light);
     void OnAudioSignalLoaded(AUDIO_SIGNAL* as);
     void OnAudioFormatLoaded(AUDIO_FORMAT* af);
+    void OnDeviceSelected();
 
 private:
 
@@ -325,6 +326,7 @@ private:
     DEVICE_INFO mDeviceInfo;
     BOOL mInited;
     MWReferenceClock* mClock;
+    DEVICE_STATUS mDeviceStatus{};
     AUDIO_INPUT_STATUS mAudioInputStatus{};
     AUDIO_OUTPUT_STATUS mAudioOutputStatus{};
     VIDEO_INPUT_STATUS mVideoInputStatus{};

@@ -82,6 +82,8 @@
 #define IDC_HDR_MAX_FALL_LABEL          1078
 #define IDC_HDR_MAX_CLL                 1079
 #define IDC_HDR_MAX_FALL                1080
+#define IDC_DEVICE_ID_LABEL             1081
+#define IDC_DEVICE_ID                   1082
 
 // Next default values for new objects
 // 
@@ -89,7 +91,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        103
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1081
+#define _APS_NEXT_CONTROL_VALUE         1083
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
