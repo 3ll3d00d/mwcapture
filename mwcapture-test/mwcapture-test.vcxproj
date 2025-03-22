@@ -64,7 +64,7 @@
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
-      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses;$(SolutionDir)common</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <PrecompiledHeaderOutputFile />
@@ -101,7 +101,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>OldStyle</DebugInformationFormat>
-      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)mwsdk\include;$(SolutionDir)directshow_baseclasses;$(SolutionDir)common</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <PrecompiledHeaderOutputFile />
@@ -122,6 +122,9 @@
     <ClCompile Include="utiltest.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\common\common.vcxproj">
+      <Project>{065a4d65-7733-494e-bae4-82e2753705c4}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\directshow_baseclasses\directshow_baseclasses.vcxproj">
       <Project>{fbc2d6cb-389e-4316-a41f-38b098e27ae1}</Project>
     </ProjectReference>

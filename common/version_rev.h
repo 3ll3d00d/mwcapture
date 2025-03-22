@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2024 Matt Khan
+ *      Copyright (C) 2025 Matt Khan
  *      https://github.com/3ll3d00d/mwcapture
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of

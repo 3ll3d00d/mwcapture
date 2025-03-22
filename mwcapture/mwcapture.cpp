@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2024 Matt Khan
+ *      Copyright (C) 2025 Matt Khan
  *      https://github.com/3ll3d00d/mwcapture
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of
@@ -167,7 +167,7 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	// TODO read HKEY_LOCAL_MACHINE L"Software\\mwcapture\\devicepath"
 	for (int i = 0; i < channelCount; i++)
 	{
-		DEVICE_INFO di;
+		DEVICE_INFO di{};
 		MWCAP_CHANNEL_INFO mci;
 		MWGetChannelInfoByIndex(i, &mci);
 		if (0 == strcmp(mci.szFamilyName, "Pro Capture"))
@@ -240,6 +240,10 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 			#endif
 
 			diToUse = &di;
+			MWGetDevicePath(i, mDeviceInfo.devicePath);
+			mDeviceInfo.serialNo += diToUse->serialNo;
+			mDeviceInfo.deviceType = diToUse->deviceType;
+			mDeviceInfo.hChannel = diToUse->hChannel;
 		}
 		else
 		{
@@ -264,7 +268,6 @@ MagewellCaptureFilter::MagewellCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	}
 	else
 	{
-		mDeviceInfo = *diToUse;
 		OnDeviceSelected();
 	}
 
@@ -549,11 +552,19 @@ void MagewellCaptureFilter::OnAudioFormatLoaded(AUDIO_FORMAT* af)
 
 void MagewellCaptureFilter::OnDeviceSelected()
 {
-	mDeviceStatus.deviceId = mDeviceInfo.deviceType == USB ? L"USB " : L"PRO ";
-	mDeviceStatus.deviceId += std::wstring{ mDeviceInfo.serialNo.begin(), mDeviceInfo.serialNo.end() };
-	mDeviceStatus.deviceId += L" [";
-	mDeviceStatus.deviceId += std::wstring{ mDeviceInfo.devicePath };
-	mDeviceStatus.deviceId += L"]";
+	mDeviceStatus.deviceDesc = devicetype_to_name(mDeviceInfo.deviceType);
+	mDeviceStatus.deviceDesc += " [";
+	mDeviceStatus.deviceDesc += mDeviceInfo.serialNo;
+	mDeviceStatus.deviceDesc += "]";
+
+	#ifndef NO_QUILL
+	LOG_INFO(mLogger, "[{}] Recorded device description: {}", mLogPrefix, mDeviceStatus.deviceDesc);
+	#endif
+
+	if (mInfoCallback != nullptr)
+	{
+		mInfoCallback->Reload(&mDeviceStatus);
+	}
 }
 
 HRESULT MagewellCaptureFilter::GetTime(REFERENCE_TIME* pTime)
@@ -671,6 +682,7 @@ HRESULT MagewellCaptureFilter::Reload()
 		mInfoCallback->Reload(&mVideoInputStatus);
 		mInfoCallback->Reload(&mVideoOutputStatus);
 		mInfoCallback->Reload(&mHdrStatus);
+		mInfoCallback->Reload(&mDeviceStatus);
 		return S_OK;
 	}
 	return E_FAIL;

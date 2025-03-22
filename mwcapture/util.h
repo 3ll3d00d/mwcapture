@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2024 Matt Khan
+ *      Copyright (C) 2025 Matt Khan
  *      https://github.com/3ll3d00d/mwcapture
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of
@@ -14,24 +14,7 @@
  */
 #pragma once
 #include <LibMWCapture/MWHDMIPackets.h>
-
-struct HDR_META
-{
-	bool exists{ false };
-	int r_primary_x{ 0 };
-	int r_primary_y{ 0 };
-	int g_primary_x{ 0 };
-	int g_primary_y{ 0 };
-	int b_primary_x{ 0 };
-	int b_primary_y{ 0 };
-	int whitepoint_x{ 0 };
-	int whitepoint_y{ 0 };
-	int minDML{ 0 };
-	int maxDML{ 0 };
-	int maxCLL{ 0 };
-	int maxFALL{ 0 };
-	int transferFunction{ 4 };
-};
+#include "domain.h"
 
 // utility functions
 inline void LoadHdrMeta(HDR_META* meta, HDMI_HDR_INFOFRAME_PAYLOAD* frame)

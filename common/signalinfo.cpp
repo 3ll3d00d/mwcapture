@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2024 Matt Khan
+ *      Copyright (C) 2025 Matt Khan
  *      https://github.com/3ll3d00d/mwcapture
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of
@@ -232,6 +232,17 @@ HRESULT CSignalInfoProp::Reload(HDR_STATUS* payload)
 		SendDlgItemMessage(m_Dlg, IDC_HDR_DML, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
 		SendDlgItemMessage(m_Dlg, IDC_HDR_MAX_CLL, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
 		SendDlgItemMessage(m_Dlg, IDC_HDR_MAX_FALL, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
+	}
+	return S_OK;
+}
+
+HRESULT CSignalInfoProp::Reload(DEVICE_STATUS* payload)
+{
+	if (!payload->deviceDesc.empty())
+	{
+		WCHAR buffer[256];
+		_snwprintf_s(buffer, _TRUNCATE, L"%hs", payload->deviceDesc.c_str());
+		SendDlgItemMessage(m_Dlg, IDC_DEVICE_ID, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(buffer));
 	}
 	return S_OK;
 }

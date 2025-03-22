@@ -21,25 +21,25 @@
 #include <initguid.h>
 #include <dvdmedia.h>
 #include <dllsetup.h>
-#include "mwcapture.h"
+#include "bmcapture.h"
 
 #define CreateComObject(clsid, iid, var) CoCreateInstance( clsid, NULL, CLSCTX_INPROC_SERVER, iid, (void **)&var);
 
-#if MWCAPTURE_NAME_SUFFIX == 1
-#define FILTER_NAME L"Magewell Pro Capture (Trace)"
- // {9E53337D-9E32-40B4-AD39-B8525CDECD45}
-DEFINE_GUID(CLSID_MWCAPTURE_FILTER,
-    0x9e53337d, 0x9e32, 0x40b4, 0xad, 0x39, 0xb8, 0x52, 0x5c, 0xde, 0xcd, 0x45);
-#elif MWCAPTURE_NAME_SUFFIX == 2
-#define FILTER_NAME L"Magewell Pro Capture (Warn)"
- // {87A31069-9A13-40D6-9C84-5499D8A44519}
-DEFINE_GUID(CLSID_MWCAPTURE_FILTER,
-    0x87a31069, 0x9a13, 0x40d6, 0x9c, 0x84, 0x54, 0x99, 0xd8, 0xa4, 0x45, 0x19);
+#if CAPTURE_NAME_SUFFIX == 1
+#define FILTER_NAME L"Blackmagic Capture (Trace)"
+ // {1BCB1E63-505B-4E66-ABEB-95913C7B081D}
+DEFINE_GUID(CLSID_BMCAPTURE_FILTER,
+    0x1bcb1e63, 0x505b, 0x4e66, 0xab, 0xeb, 0x95, 0x91, 0x3c, 0x7b, 0x8, 0x1d);
+#elif CAPTURE_NAME_SUFFIX == 2
+#define FILTER_NAME L"Blackmagic Capture (Warn)"
+ // {D430B305-857C-475A-96B6-1E8EB86C4BF9}
+DEFINE_GUID(CLSID_BMCAPTURE_FILTER,
+    0xd430b305, 0x857c, 0x475a, 0x96, 0xb6, 0x1e, 0x8e, 0xb8, 0x6c, 0x4b, 0xf9);
 #else
-#define FILTER_NAME L"Magewell Pro Capture"
- // {4E3B0A92-2476-4016-81F0-201F19F6FBAE}
-DEFINE_GUID(CLSID_MWCAPTURE_FILTER,
-    0x4e3b0a92, 0x2476, 0x4016, 0x81, 0xf0, 0x20, 0x1f, 0x19, 0xf6, 0xfb, 0xae);
+#define FILTER_NAME L"Blackmagic Capture"
+ // {64116B3A-1E04-4CA7-BCFE-F42A0CE7BF16}
+DEFINE_GUID(CLSID_BMCAPTURE_FILTER,
+    0x64116b3a, 0x1e04, 0x4ca7, 0xbc, 0xfe, 0xf4, 0x2a, 0xc, 0xe7, 0xbf, 0x16);
 #endif
 
 // LAV compatibility
@@ -91,8 +91,8 @@ const AMOVIESETUP_PIN sMIPPins[] = { sVideoPin, sAudioPin };
 
 constexpr AMOVIESETUP_FILTER sMIPSetup =
 {
-    &CLSID_MWCAPTURE_FILTER, // Filter CLSID
-    L"MagewellCapture", // String name
+    &CLSID_BMCAPTURE_FILTER, // Filter CLSID
+    L"BlackmagicCapture", // String name
     MERIT_DO_NOT_USE, // Filter merit
     2, // Number of pins
     sMIPPins // Pin information
@@ -103,13 +103,14 @@ constexpr AMOVIESETUP_FILTER sMIPSetup =
 CFactoryTemplate g_Templates[] = {
     {
         FILTER_NAME,
-        &CLSID_MWCAPTURE_FILTER,
-        MagewellCaptureFilter::CreateInstance,
+        &CLSID_BMCAPTURE_FILTER,
+        // FIXFIX BlackmagicCaptureFilter::CreateInstance,
+        CSignalInfoProp::CreateInstance,
         nullptr,
         &sMIPSetup
     },
     {
-        L"MWCapture Properties",
+        L"bmcapture Properties",
         &CLSID_SignalInfoProps,
         CSignalInfoProp::CreateInstance,
         nullptr,
@@ -127,7 +128,7 @@ STDAPI AMovieSetupUnregisterServer(CLSID clsServer);
 
 STDAPI RegisterFilters(BOOL bRegister)
 {
-	WCHAR achFileName[MAX_PATH];
+    WCHAR achFileName[MAX_PATH];
     char achTemp[MAX_PATH];
     ASSERT(g_hInst != 0);
 
@@ -146,22 +147,22 @@ STDAPI RegisterFilters(BOOL bRegister)
     {
         IFilterMapper2* fm = 0;
         hr = CreateComObject(CLSID_FilterMapper2, IID_IFilterMapper2, fm)
-        if (SUCCEEDED(hr))
-        {
-            if (bRegister)
+            if (SUCCEEDED(hr))
             {
-                REGFILTER2 videoFilter;
-                videoFilter.dwVersion = 1;
-                videoFilter.dwMerit = MERIT_DO_NOT_USE;
-                videoFilter.cPins = 1;
-                videoFilter.rgPins = &sMIPPins[0];
-                hr = fm->RegisterFilter(CLSID_MWCAPTURE_FILTER, FILTER_NAME, nullptr, &CLSID_VideoInputDeviceCategory, nullptr, &videoFilter);
+                if (bRegister)
+                {
+                    REGFILTER2 videoFilter;
+                    videoFilter.dwVersion = 1;
+                    videoFilter.dwMerit = MERIT_DO_NOT_USE;
+                    videoFilter.cPins = 1;
+                    videoFilter.rgPins = &sMIPPins[0];
+                    hr = fm->RegisterFilter(CLSID_BMCAPTURE_FILTER, FILTER_NAME, nullptr, &CLSID_VideoInputDeviceCategory, nullptr, &videoFilter);
+                }
+                else
+                {
+                    hr = fm->UnregisterFilter(&CLSID_VideoInputDeviceCategory, nullptr, CLSID_BMCAPTURE_FILTER);
+                }
             }
-            else
-            {
-                hr = fm->UnregisterFilter(&CLSID_VideoInputDeviceCategory, nullptr, CLSID_MWCAPTURE_FILTER);
-            }
-        }
 
         if (fm)
             fm->Release();

@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2024 Matt Khan
+ *      Copyright (C) 2025 Matt Khan
  *      https://github.com/3ll3d00d/mwcapture
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of
@@ -44,10 +44,10 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include <array>
 #include <wmcodecdsp.h>
 #include "LibMWCapture/MWCapture.h"
-#include "util.h"
-#include "signalinfo.h"
 #include "lavfilters_side_data.h"
 #include "ISpecifyPropertyPages2.h"
+#include "signalinfo.h"
+#include "util.h"
 
 // HDMI Audio Bitstream Codec Identification metadata
 
@@ -201,7 +201,7 @@ inline const char* devicetype_to_name(DeviceType e)
 struct DEVICE_INFO
 {
     DeviceType deviceType;
-    std::string serialNo;
+    std::string serialNo{};
     WCHAR devicePath[128];
     HCHANNEL hChannel;
 };
@@ -241,7 +241,6 @@ public:
         return t;
     }
 };
-
 
 /**
  * Directshow filter which can uses the MWCapture SDK to receive video and audio from a HDMI capture card.
@@ -323,7 +322,7 @@ public:
     STDMETHODIMP CreatePage(const GUID& guid, IPropertyPage** ppPage) override;
 
 private:
-    DEVICE_INFO mDeviceInfo;
+    DEVICE_INFO mDeviceInfo{};
     BOOL mInited;
     MWReferenceClock* mClock;
     DEVICE_STATUS mDeviceStatus{};
