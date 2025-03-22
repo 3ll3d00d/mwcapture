@@ -17,7 +17,7 @@
 #include "version_rev.h"
 
 #define MW_VERSION_MAJOR     0
-#define MW_VERSION_MINOR    52
+#define MW_VERSION_MINOR     6
 #define MW_VERSION_REVISION  0
 
 /////////////////////////////////////////////////////////
