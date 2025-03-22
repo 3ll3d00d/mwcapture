@@ -376,7 +376,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="mwcapture.h" />
-    <ClInclude Include="resource.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>
   <ItemGroup>
