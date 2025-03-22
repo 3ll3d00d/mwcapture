@@ -2419,6 +2419,7 @@ void MagewellVideoCapturePin::StopCapture()
 	else if (deviceType == USB)
 	{
 		delete mVideoCapture;
+		mVideoCapture = nullptr;
 	}
 }
 
@@ -4224,6 +4225,7 @@ void MagewellAudioCapturePin::StopCapture()
 	else if (deviceType == USB)
 	{
 		delete mAudioCapture;
+		mAudioCapture = nullptr;
 	}
 }
 
