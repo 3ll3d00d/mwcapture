@@ -15,6 +15,7 @@
 #pragma once
 #include <string>
 #include <array>
+#include <ks.h>
 #include <ksmedia.h>
 
 constexpr auto not_present = 1024;
@@ -39,7 +40,7 @@ struct HDR_META
 	int maxDML{0};
 	int maxCLL{0};
 	int maxFALL{0};
-	int transferFunction{4};
+	int transferFunction{0};
 };
 
 struct AUDIO_INPUT_STATUS

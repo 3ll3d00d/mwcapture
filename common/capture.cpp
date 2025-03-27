@@ -35,8 +35,7 @@
 #endif
 
 CaptureFilter::CaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID clsid, std::string logPrefix) :
-	CSource(pName, punk, clsid),
-	Loggable(std::move(logPrefix))
+	CSource(pName, punk, clsid)
 {
 	#ifndef NO_QUILL
 	// TODO make logging configurable
@@ -57,7 +56,7 @@ CaptureFilter::CaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID 
 			return cfg;
 		}(),
 			quill::FileEventNotifier{});
-	mLogger =
+	mLogData.mLogger = 
 		CustomFrontend::create_or_get_logger("filter",
 			std::move(fileSink),
 			quill::PatternFormatterOptions{
@@ -68,7 +67,8 @@ CaptureFilter::CaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID 
 			});
 
 	// printing absolutely everything we may ever log
-	mLogger->set_log_level(MIN_LOG_LEVEL);
+	mLogData.mLogger->set_log_level(MIN_LOG_LEVEL);
+	mLogData.mLogPrefix = logPrefix;
 	#endif // !NO_QUILL
 }
 
@@ -142,7 +142,7 @@ STDMETHODIMP CaptureFilter::SetSyncSource(IReferenceClock* pClock)
 	CBaseFilter::SetSyncSource(pClock);
 	for (auto i = 0; i < m_iPins; i++)
 	{
-		auto stream = dynamic_cast<CapturePin*>(m_paStreams[i]);
+		auto stream = dynamic_cast<IMediaFilter*>(m_paStreams[i]);
 		stream->SetSyncSource(pClock);
 	}
 	return NOERROR;
@@ -155,7 +155,7 @@ HRESULT CaptureFilter::JoinFilterGraph(IFilterGraph* pGraph, LPCWSTR pName)
 	{
 		for (auto i = 0; i < m_iPins; i++)
 		{
-			auto stream = dynamic_cast<CapturePin*>(m_paStreams[i]);
+			auto stream = dynamic_cast<CBaseStreamControl*>(m_paStreams[i]);
 			stream->SetFilterGraph(m_pSink);
 		}
 	}
@@ -168,14 +168,15 @@ STDMETHODIMP CaptureFilter::Run(REFERENCE_TIME tStart)
 	GetReferenceTime(&rt);
 
 	#ifndef NO_QUILL
-	LOG_INFO(mLogger, "Filter has started running at {}", rt);
+	LOG_INFO(mLogData.mLogger, "[{}] Filter has started running at {}", mLogData.mLogPrefix, rt);
 	#endif
 
 	for (auto i = 0; i < m_iPins; i++)
 	{
-		auto stream = dynamic_cast<CapturePin*>(m_paStreams[i]);
+		auto stream = dynamic_cast<IAMTimeAware*>(m_paStreams[i]);
 		stream->SetStartTime(rt);
-		stream->NotifyFilterState(State_Running, tStart);
+		auto s1 = dynamic_cast<CBaseStreamControl*>(m_paStreams[i]);
+		s1->NotifyFilterState(State_Running, tStart);
 	}
 	return CBaseFilter::Run(tStart);
 }
@@ -184,7 +185,7 @@ STDMETHODIMP CaptureFilter::Pause()
 {
 	for (auto i = 0; i < m_iPins; i++)
 	{
-		auto stream = dynamic_cast<CapturePin*>(m_paStreams[i]);
+		auto stream = dynamic_cast<CBaseStreamControl*>(m_paStreams[i]);
 		stream->NotifyFilterState(State_Paused);
 	}
 	return CBaseFilter::Pause();
@@ -194,7 +195,7 @@ STDMETHODIMP CaptureFilter::Stop()
 {
 	for (auto i = 0; i < m_iPins; i++)
 	{
-		auto stream = dynamic_cast<CapturePin*>(m_paStreams[i]);
+		auto stream = dynamic_cast<CBaseStreamControl*>(m_paStreams[i]);
 		stream->NotifyFilterState(State_Stopped);
 	}
 	return CBaseFilter::Stop();
@@ -322,7 +323,18 @@ void CaptureFilter::OnVideoFormatLoaded(VIDEO_FORMAT* vf)
 	}
 
 	mVideoOutputStatus.outPixelStructure = vf->pixelStructureName;
-	mVideoOutputStatus.outTransferFunction = vf->hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+	switch (vf->hdrMeta.transferFunction)
+	{
+	case 4:
+		mVideoOutputStatus.outTransferFunction = "REC.709";
+		break;
+	case 15:
+		mVideoOutputStatus.outTransferFunction = "SMPTE ST 2084 (PQ)";
+		break;
+	default:
+		mVideoOutputStatus.outTransferFunction = "?";
+		break;
+	}
 
 	if (mInfoCallback != nullptr)
 	{
@@ -390,23 +402,33 @@ HdmiCaptureFilter<D_INF, V_SIG, A_SIG>::HdmiCaptureFilter(LPCTSTR pName, LPUNKNO
 {
 }
 
+void IAMTimeAware::SetStartTime(LONGLONG streamStartTime)
+{
+	mStreamStartTime = streamStartTime;
+
+	#ifndef NO_QUILL
+	LOG_WARNING(mLogData.mLogger, "[{}] CapturePin::SetStartTime at {}", mLogData.mLogPrefix, streamStartTime);
+	#endif
+}
+
+
 //////////////////////////////////////////////////////////////////////////
 // CapturePin
 //////////////////////////////////////////////////////////////////////////
 template <class F>
 CapturePin<F>::CapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix) :
 	CSourceStream(pObjectName, phr, pParent, pPinName),
+	IAMTimeAware(pLogPrefix, "filter"),
 	mFrameCounter(0),
 	mPreview(false),
-	mStreamStartTime(0),
 	mLastSampleDiscarded(0),
 	mSendMediaType(0),
 	mFrameEndTime(0),
 	mFilter(pParent)
 {
 	#ifndef NO_QUILL
-	mLogPrefix = std::move(pLogPrefix);
-	mLogger = CustomFrontend::get_logger("filter");
+	mLogData.mLogPrefix = std::move(pLogPrefix);
+	mLogData.mLogger = CustomFrontend::get_logger("filter");
 	#endif
 }
 
@@ -426,7 +448,7 @@ HRESULT CapturePin<F>::HandleStreamStateChange(IMediaSample* pms)
 		if (mLastSampleDiscarded)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] Recovery after sample discard, setting discontinuity", mLogPrefix);
+			LOG_TRACE_L1(mLogData.mLogger, "[{}] Recovery after sample discard, setting discontinuity", mLogData.mLogPrefix);
 			#endif
 
 			pms->SetDiscontinuity(TRUE);
@@ -437,7 +459,7 @@ HRESULT CapturePin<F>::HandleStreamStateChange(IMediaSample* pms)
 	else
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] Entering stream discard", mLogPrefix);
+		LOG_TRACE_L1(mLogData.mLogger, "[{}] Entering stream discard", mLogData.mLogPrefix);
 		#endif
 
 		mLastSampleDiscarded = TRUE;
@@ -454,11 +476,11 @@ HRESULT CapturePin<F>::OnThreadStartPlay()
 
 	if (mStreamStartTime == 0)
 	{
-		LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {} but stream not started yet", mLogPrefix, rt);
+		LOG_WARNING(mLogData.mLogger, "[{}] Pin worker thread starting at {} but stream not started yet", mLogData.mLogPrefix, rt);
 	}
 	else
 	{
-		LOG_WARNING(mLogger, "[{}] Pin worker thread starting at {}, stream started at {}", mLogPrefix, rt,
+		LOG_WARNING(mLogData.mLogger, "[{}] Pin worker thread starting at {}, stream started at {}", mLogData.mLogPrefix, rt,
 			mStreamStartTime);
 	}
 	#endif
@@ -494,7 +516,7 @@ STDMETHODIMP CapturePin<F>::NonDelegatingQueryInterface(REFIID riid, void** ppv)
 template <class F>
 HRESULT CapturePin<F>::DoBufferProcessingLoop(void) {
 	#ifndef NO_QUILL
-	LOG_INFO(mLogger, "[{}] Entering DoBufferProcessingLoop", mLogPrefix);
+	LOG_INFO(mLogData.mLogger, "[{}] Entering DoBufferProcessingLoop", mLogData.mLogPrefix);
 	#endif
 
 	Command com;
@@ -510,7 +532,7 @@ HRESULT CapturePin<F>::DoBufferProcessingLoop(void) {
 			if (FAILED(hrBuf) || hrBuf == S_FALSE)
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] Failed to GetDeliveryBuffer ({:#08x}), retrying", mLogPrefix, hrBuf);
+				LOG_WARNING(mLogData.mLogger, "[{}] Failed to GetDeliveryBuffer ({:#08x}), retrying", mLogData.mLogPrefix, hrBuf);
 				#endif
 				SHORT_BACKOFF;
 				continue;
@@ -526,7 +548,7 @@ HRESULT CapturePin<F>::DoBufferProcessingLoop(void) {
 				if (hr != S_OK)
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] Failed to deliver sample downstream ({:#08x}), process loop will exit", mLogPrefix, hr);
+					LOG_WARNING(mLogData.mLogger, "[{}] Failed to deliver sample downstream ({:#08x}), process loop will exit", mLogData.mLogPrefix, hr);
 					#endif
 
 					return S_OK;
@@ -536,14 +558,14 @@ HRESULT CapturePin<F>::DoBufferProcessingLoop(void) {
 			else if (hr == S_FALSE)
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] Buffer not filled, retrying", mLogPrefix);
+				LOG_WARNING(mLogData.mLogger, "[{}] Buffer not filled, retrying", mLogData.mLogPrefix);
 				#endif
 				pSample->Release();
 			}
 			else
 			{
 				#ifndef NO_QUILL
-				LOG_WARNING(mLogger, "[{}] FillBuffer failed ({:#08x}), sending EOS and EC_ERRORABORT", mLogPrefix, hr);
+				LOG_WARNING(mLogData.mLogger, "[{}] FillBuffer failed ({:#08x}), sending EOS and EC_ERRORABORT", mLogData.mLogPrefix, hr);
 				#endif
 
 				pSample->Release();
@@ -560,27 +582,27 @@ HRESULT CapturePin<F>::DoBufferProcessingLoop(void) {
 		if (com == CMD_RUN || com == CMD_PAUSE)
 		{
 			#ifndef NO_QUILL
-			LOG_INFO(mLogger, "[{}] DoBufferProcessingLoop Replying to CMD {}", mLogPrefix, static_cast<int>(com));
+			LOG_INFO(mLogData.mLogger, "[{}] DoBufferProcessingLoop Replying to CMD {}", mLogData.mLogPrefix, static_cast<int>(com));
 			#endif
 			Reply(NOERROR);
 		}
 		else if (com != CMD_STOP)
 		{
 			#ifndef NO_QUILL
-			LOG_ERROR(mLogger, "[{}] DoBufferProcessingLoop Replying to UNEXPECTED CMD {}", mLogPrefix, static_cast<int>(com));
+			LOG_ERROR(mLogData.mLogger, "[{}] DoBufferProcessingLoop Replying to UNEXPECTED CMD {}", mLogData.mLogPrefix, static_cast<int>(com));
 			#endif
 			Reply(static_cast<DWORD>(E_UNEXPECTED));
 		}
 		else
 		{
 			#ifndef NO_QUILL
-			LOG_INFO(mLogger, "[{}] DoBufferProcessingLoop CMD_STOP will exit", mLogPrefix);
+			LOG_INFO(mLogData.mLogger, "[{}] DoBufferProcessingLoop CMD_STOP will exit", mLogData.mLogPrefix);
 			#endif
 		}
 	} while (com != CMD_STOP);
 
 	#ifndef NO_QUILL
-	LOG_INFO(mLogger, "[{}] Exiting DoBufferProcessingLoop", mLogPrefix);
+	LOG_INFO(mLogData.mLogger, "[{}] Exiting DoBufferProcessingLoop", mLogData.mLogPrefix);
 	#endif
 	return S_FALSE;
 }
@@ -589,33 +611,23 @@ template <class F>
 HRESULT CapturePin<F>::OnThreadDestroy()
 {
 	#ifndef NO_QUILL
-	LOG_INFO(mLogger, "[{}] >>> CapturePin::OnThreadDestroy", mLogPrefix);
+	LOG_INFO(mLogData.mLogger, "[{}] >>> CapturePin::OnThreadDestroy", mLogData.mLogPrefix);
 	#endif
 
 	DoThreadDestroy();
 
 	#ifndef NO_QUILL
-	LOG_INFO(mLogger, "[{}] <<< CapturePin::OnThreadDestroy", mLogPrefix);
+	LOG_INFO(mLogData.mLogger, "[{}] <<< CapturePin::OnThreadDestroy", mLogData.mLogPrefix);
 	#endif
 
 	return S_OK;
 }
 
 template <class F>
-void CapturePin<F>::SetStartTime(LONGLONG streamStartTime)
-{
-	mStreamStartTime = streamStartTime;
-
-	#ifndef NO_QUILL
-	LOG_WARNING(mLogger, "[{}] CapturePin::SetStartTime at {}", mLogPrefix, streamStartTime);
-	#endif
-}
-
-template <class F>
 HRESULT CapturePin<F>::BeginFlush()
 {
 	#ifndef NO_QUILL
-	LOG_TRACE_L1(mLogger, "[{}] CapturePin::BeginFlush", mLogPrefix);
+	LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::BeginFlush", mLogData.mLogPrefix);
 	#endif
 
 	this->Flushing(TRUE);
@@ -626,7 +638,7 @@ template <class F>
 HRESULT CapturePin<F>::EndFlush()
 {
 	#ifndef NO_QUILL
-	LOG_TRACE_L1(mLogger, "[{}] CapturePin::EndFlush", mLogPrefix);
+	LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::EndFlush", mLogData.mLogPrefix);
 	#endif
 
 	this->Flushing(FALSE);
@@ -638,7 +650,7 @@ HRESULT CapturePin<F>::Notify(IBaseFilter* pSelf, Quality q)
 {
 	// just to avoid use of DbgBreak in default implementation as we can't do anything about it given we are a slave to the device
 	#ifndef NO_QUILL
-	LOG_TRACE_L1(mLogger, "[{}] CapturePin::Notify {}", mLogPrefix, q.Type == 0 ? "Famine" : "Flood");
+	LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::Notify {}", mLogData.mLogPrefix, q.Type == 0 ? "Famine" : "Flood");
 	#endif
 
 	return S_OK;
@@ -649,7 +661,7 @@ template <class F>
 STDMETHODIMP CapturePin<F>::SetFormat(AM_MEDIA_TYPE* pmt)
 {
 	#ifndef NO_QUILL
-	LOG_WARNING(mLogger, "[{}] CapturePin::SetFormat is not supported", mLogPrefix);
+	LOG_WARNING(mLogData.mLogger, "[{}] CapturePin::SetFormat is not supported", mLogData.mLogPrefix);
 	#endif
 	// TODO try to support this?
 	return VFW_E_INVALIDMEDIATYPE;
@@ -670,7 +682,7 @@ HRESULT CapturePin<F>::SetMediaType(const CMediaType* pmt)
 	HRESULT hr = CSourceStream::SetMediaType(pmt);
 
 	#ifndef NO_QUILL
-	LOG_TRACE_L3(mLogger, "[{}] SetMediaType (res: {:#08x})", mLogPrefix, hr);
+	LOG_TRACE_L3(mLogData.mLogger, "[{}] SetMediaType (res: {:#08x})", mLogData.mLogPrefix, hr);
 	#endif
 
 	return hr;
@@ -686,8 +698,8 @@ HRESULT CapturePin<F>::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATOR_PRO
 	auto acceptedUpstreamBufferCount = ProposeBuffers(pProperties);
 
 	#ifndef NO_QUILL
-	LOG_TRACE_L1(mLogger, "[{}] CapturePin::DecideBufferSize size: {} count: {} (from upstream? {})",
-		mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers, acceptedUpstreamBufferCount);
+	LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::DecideBufferSize size: {} count: {} (from upstream? {})",
+		mLogData.mLogPrefix, pProperties->cbBuffer, pProperties->cBuffers, acceptedUpstreamBufferCount);
 	#endif
 
 	ALLOCATOR_PROPERTIES actual;
@@ -696,7 +708,7 @@ HRESULT CapturePin<F>::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATOR_PRO
 	if (FAILED(hr))
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] CapturePin::DecideBufferSize failed to SetProperties result {:#08x}", mLogPrefix,
+		LOG_WARNING(mLogData.mLogger, "[{}] CapturePin::DecideBufferSize failed to SetProperties result {:#08x}", mLogData.mLogPrefix,
 			hr);
 		#endif
 
@@ -705,7 +717,7 @@ HRESULT CapturePin<F>::DecideBufferSize(IMemAllocator* pIMemAlloc, ALLOCATOR_PRO
 	if (actual.cbBuffer < pProperties->cbBuffer)
 	{
 		#ifndef NO_QUILL
-		LOG_WARNING(mLogger, "[{}] CapturePin::DecideBufferSize actual buffer is {} not {}", mLogPrefix,
+		LOG_WARNING(mLogData.mLogger, "[{}] CapturePin::DecideBufferSize actual buffer is {} not {}", mLogData.mLogPrefix,
 			actual.cbBuffer, pProperties->cbBuffer);
 		#endif
 
@@ -776,7 +788,7 @@ receiveconnection:
 	if (SUCCEEDED(hr))
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] CapturePin::RenegotiateMediaType ReceiveConnection accepted", mLogPrefix);
+		LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::RenegotiateMediaType ReceiveConnection accepted", mLogData.mLogPrefix);
 		#endif
 
 		hr = SetMediaType(pmt);
@@ -790,8 +802,8 @@ receiveconnection:
 		if (timeout > 0)
 		{
 			#ifndef NO_QUILL
-			LOG_TRACE_L1(mLogger, "[{}] CapturePin::NegotiateMediaType Buffers outstanding, retrying in 10ms..",
-				mLogPrefix);
+			LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType Buffers outstanding, retrying in 10ms..",
+				mLogData.mLogPrefix);
 			#endif
 
 			BACKOFF;
@@ -801,8 +813,8 @@ receiveconnection:
 		{
 			#ifndef NO_QUILL
 			LOG_TRACE_L1(
-				mLogger, "[{}] CapturePin::NegotiateMediaType Buffers outstanding, timeout reached, flushing..",
-				mLogPrefix);
+				mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType Buffers outstanding, timeout reached, flushing..",
+				mLogData.mLogPrefix);
 			#endif
 
 			DeliverBeginFlush();
@@ -814,7 +826,7 @@ receiveconnection:
 	else if (hrQA == S_OK) // docs say check S_OK explicitly rather than use the SUCCEEDED macro
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] CapturePin::NegotiateMediaType QueryAccept accepted", mLogPrefix);
+		LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType QueryAccept accepted", mLogData.mLogPrefix);
 		#endif
 
 		hr = SetMediaType(pmt);
@@ -823,7 +835,7 @@ receiveconnection:
 			if (!renegotiateOnQueryAccept)
 			{
 				#ifndef NO_QUILL
-				LOG_TRACE_L1(mLogger, "[{}] CapturePin::NegotiateMediaType - No buffer change", mLogPrefix);
+				LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType - No buffer change", mLogData.mLogPrefix);
 				#endif
 
 				retVal = S_OK;
@@ -844,7 +856,7 @@ receiveconnection:
 						if (checkProps.cbBuffer == props.cbBuffer && checkProps.cBuffers == props.cBuffers)
 						{
 							#ifndef NO_QUILL
-							LOG_TRACE_L1(mLogger, "[{}] Updated allocator to {} bytes {} buffers", mLogPrefix,
+							LOG_TRACE_L1(mLogData.mLogger, "[{}] Updated allocator to {} bytes {} buffers", mLogData.mLogPrefix,
 								props.cbBuffer, props.cBuffers);
 							#endif
 							retVal = S_OK;
@@ -853,25 +865,25 @@ receiveconnection:
 						{
 							#ifndef NO_QUILL
 							LOG_WARNING(
-								mLogger,
+								mLogData.mLogger,
 								"[{}] Allocator accepted update to {} bytes {} buffers but is {} bytes {} buffers",
-								mLogPrefix, props.cbBuffer, props.cBuffers, checkProps.cbBuffer, checkProps.cBuffers);
+								mLogData.mLogPrefix, props.cbBuffer, props.cBuffers, checkProps.cbBuffer, checkProps.cBuffers);
 							#endif
 						}
 					}
 					else
 					{
 						#ifndef NO_QUILL
-						LOG_WARNING(mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers [{:#08x}]",
-							mLogPrefix, props.cbBuffer, props.cBuffers, hr);
+						LOG_WARNING(mLogData.mLogger, "[{}] Allocator did not accept update to {} bytes {} buffers [{:#08x}]",
+							mLogData.mLogPrefix, props.cbBuffer, props.cBuffers, hr);
 						#endif
 					}
 				}
 				else
 				{
 					#ifndef NO_QUILL
-					LOG_WARNING(mLogger, "[{}] Allocator did not commit update to {} bytes {} buffers [{:#08x}]",
-						mLogPrefix, props.cbBuffer, props.cBuffers, hr);
+					LOG_WARNING(mLogData.mLogger, "[{}] Allocator did not commit update to {} bytes {} buffers [{:#08x}]",
+						mLogData.mLogPrefix, props.cbBuffer, props.cBuffers, hr);
 					#endif
 				}
 			}
@@ -881,14 +893,14 @@ receiveconnection:
 	{
 		#ifndef NO_QUILL
 		LOG_WARNING(
-			mLogger, "[{}] CapturePin::NegotiateMediaType Receive Connection failed (hr: {:#08x}); QueryAccept: {:#08x}",
-			mLogPrefix, hr, hrQA);
+			mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType Receive Connection failed (hr: {:#08x}); QueryAccept: {:#08x}",
+			mLogData.mLogPrefix, hr, hrQA);
 		#endif
 	}
 	if (retVal == S_OK)
 	{
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] CapturePin::NegotiateMediaType succeeded", mLogPrefix);
+		LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType succeeded", mLogData.mLogPrefix);
 		#endif
 
 		mSendMediaType = TRUE;
@@ -897,7 +909,7 @@ receiveconnection:
 	{
 		// reinstate the old formats otherwise we're stuck thinking we have the new format
 		#ifndef NO_QUILL
-		LOG_TRACE_L1(mLogger, "[{}] CapturePin::NegotiateMediaType failed {:#08x}", mLogPrefix, retVal);
+		LOG_TRACE_L1(mLogData.mLogger, "[{}] CapturePin::NegotiateMediaType failed {:#08x}", mLogData.mLogPrefix, retVal);
 		#endif
 
 		SetMediaType(&oldMediaType);
@@ -909,7 +921,8 @@ receiveconnection:
 //////////////////////////////////////////////////////////////////////////
 // VideoCapturePin
 //////////////////////////////////////////////////////////////////////////
-void VideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const
+template <class F>
+void VideoCapturePin<F>::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const
 {
 	auto pvi = reinterpret_cast<VIDEOINFOHEADER2*>(pmt->AllocFormatBuffer(sizeof(VIDEOINFOHEADER2)));
 	ZeroMemory(pvi, sizeof(VIDEOINFOHEADER2));
@@ -949,7 +962,8 @@ void VideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* vide
 	colorimetry->NominalRange = static_cast<DXVA_NominalRange>(videoFormat->quantisation);
 
 	#ifndef NO_QUILL
-	LOG_TRACE_L3(mLogger, "[{}] DXVA_ExtendedFormat {} {} {} {}", mLogPrefix,
+	LOG_TRACE_L3(CapturePin<F>::mLogData.mLogger, "[{}] DXVA_ExtendedFormat {} {} {} {}", 
+		CapturePin<F>::mLogData.mLogPrefix,
 		static_cast<int>(colorimetry->VideoTransferMatrix),
 		static_cast<int>(colorimetry->VideoPrimaries), static_cast<int>(colorimetry->VideoTransferFunction),
 		static_cast<int>(colorimetry->NominalRange));
@@ -958,13 +972,13 @@ void VideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* vide
 	pvi->dwControlFlags += AMCONTROL_USED;
 	pvi->dwControlFlags += AMCONTROL_COLORINFO_PRESENT;
 
-	auto isRgb = FOURCC_IsRGB(videoFormat->pixelStructure);
+	auto isRgb = videoFormat->pixelEncoding == RGB_444;
 	pvi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	pvi->bmiHeader.biWidth = videoFormat->cx;
 	pvi->bmiHeader.biHeight = isRgb ? -(videoFormat->cy) : videoFormat->cy; // RGB on windows is upside down
 	pvi->bmiHeader.biPlanes = 1;
 	pvi->bmiHeader.biBitCount = videoFormat->bitCount;
-	pvi->bmiHeader.biCompression = FOURCC_IsRGB(videoFormat->pixelStructure) ? BI_RGB : videoFormat->pixelStructure;
+	pvi->bmiHeader.biCompression = isRgb ? BI_RGB : videoFormat->pixelStructure;
 	pvi->bmiHeader.biSizeImage = videoFormat->imageSize;
 	pvi->bmiHeader.biXPelsPerMeter = 0;
 	pvi->bmiHeader.biYPelsPerMeter = 0;
@@ -976,7 +990,8 @@ void VideoCapturePin::VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* vide
 	pmt->SetSubtype(&subTypeGUID);
 }
 
-bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
+template <class F>
+bool VideoCapturePin<F>::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 {
 	auto reconnect = false;
 	if (newVideoFormat->cx != mVideoFormat.cx || newVideoFormat->cy != mVideoFormat.cy)
@@ -984,7 +999,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video dimension change {}x{} to {}x{}", mLogPrefix, mVideoFormat.cx, mVideoFormat.cy,
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video dimension change {}x{} to {}x{}", 
+			CapturePin<F>::mLogData.mLogPrefix, mVideoFormat.cx, mVideoFormat.cy,
 			newVideoFormat->cx, newVideoFormat->cy);
 		#endif
 	}
@@ -993,7 +1009,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video AR change {}x{} to {}x{}", mLogPrefix, mVideoFormat.aspectX, mVideoFormat.aspectY,
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video AR change {}x{} to {}x{}", 
+			CapturePin<F>::mLogData.mLogPrefix, mVideoFormat.aspectX, mVideoFormat.aspectY,
 			newVideoFormat->aspectX, newVideoFormat->aspectY);
 		#endif
 	}
@@ -1002,7 +1019,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video FPS change {:.3f} to {:.3f}", mLogPrefix, mVideoFormat.fps, newVideoFormat->fps);
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video FPS change {:.3f} to {:.3f}", 
+			CapturePin<F>::mLogData.mLogPrefix, mVideoFormat.fps, newVideoFormat->fps);
 		#endif
 	}
 	if (mVideoFormat.bitDepth != newVideoFormat->bitDepth)
@@ -1010,7 +1028,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video bit depth change {} to {}", mLogPrefix, mVideoFormat.bitDepth, newVideoFormat->bitDepth);
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video bit depth change {} to {}", 
+			CapturePin<F>::mLogData.mLogPrefix, mVideoFormat.bitDepth, newVideoFormat->bitDepth);
 		#endif
 	}
 	if (mVideoFormat.pixelEncoding != newVideoFormat->pixelEncoding)
@@ -1018,7 +1037,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video pixel encoding change {} to {}", mLogPrefix,
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video pixel encoding change {} to {}", 
+			CapturePin<F>::mLogData.mLogPrefix,
 			static_cast<int>(mVideoFormat.pixelEncoding),
 			static_cast<int>(newVideoFormat->pixelEncoding));
 		#endif
@@ -1028,7 +1048,8 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video colour format change {} to {}", mLogPrefix, mVideoFormat.colourFormatName, newVideoFormat->colourFormatName);
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video colour format change {} to {}", 
+			CapturePin<F>::mLogData.mLogPrefix, mVideoFormat.colourFormatName, newVideoFormat->colourFormatName);
 		#endif
 	}
 	if (mVideoFormat.quantisation != newVideoFormat->quantisation || mVideoFormat.saturation != newVideoFormat->saturation)
@@ -1036,42 +1057,46 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		LOG_INFO(mLogger, "[{}] Video colorimetry change quant {} to {} sat {} to {}", mLogPrefix,
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video colorimetry change quant {} to {} sat {} to {}", 
+			CapturePin<F>::mLogData.mLogPrefix,
 			static_cast<int>(mVideoFormat.quantisation), static_cast<int>(newVideoFormat->quantisation),
 			static_cast<int>(mVideoFormat.saturation), static_cast<int>(newVideoFormat->saturation)
 		);
 		#endif
 	}
-	auto incomingTransferFunction = mHasSignal && mVideoSignal.hdrInfo.byEOTF == 0x2 ? 15 : 4;
-	if (mVideoFormat.hdrMeta.transferFunction != incomingTransferFunction)
+	auto incomingTransferFunction = newVideoFormat->hdrMeta.transferFunction;
+	if (mVideoFormat.hdrMeta.transferFunction != newVideoFormat->hdrMeta.transferFunction)
 	{
 		reconnect = true;
 
 		#ifndef NO_QUILL
-		auto formatFrom = mVideoFormat.hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
-		auto formatTo = incomingTransferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
-		LOG_INFO(mLogger, "[{}] Video transfer function change {} ({}) to {} ({})", mLogPrefix,
-			formatFrom, mVideoFormat.hdrMeta.transferFunction, formatTo, incomingTransferFunction);
+		auto formatFrom = mVideoFormat.hdrMeta.transferFunction == 0 ? "?" : mVideoFormat.hdrMeta.transferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+		auto formatTo = incomingTransferFunction == 0 ? "?" : incomingTransferFunction == 4 ? "REC.709" : "SMPTE ST 2084 (PQ)";
+		LOG_INFO(CapturePin<F>::mLogData.mLogger, "[{}] Video transfer function change {} ({}) to {} ({})", 
+			CapturePin<F>::mLogData.mLogPrefix, formatFrom, mVideoFormat.hdrMeta.transferFunction, formatTo, incomingTransferFunction);
 		#endif
 	}
 
 	return reconnect;
 }
 
-HRESULT VideoCapturePin::GetMediaType(CMediaType* pmt)
+template <class F>
+HRESULT VideoCapturePin<F>::GetMediaType(CMediaType* pmt)
 {
 	VideoFormatToMediaType(pmt, &mVideoFormat);
 	return NOERROR;
 }
 
-STDMETHODIMP VideoCapturePin::GetNumberOfCapabilities(int* piCount, int* piSize)
+template <class F>
+STDMETHODIMP VideoCapturePin<F>::GetNumberOfCapabilities(int* piCount, int* piSize)
 {
 	*piCount = 1;
 	*piSize = sizeof(VIDEO_STREAM_CONFIG_CAPS);
 	return S_OK;
 }
 
-STDMETHODIMP VideoCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC)
+template <class F>
+STDMETHODIMP VideoCapturePin<F>::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC)
 {
 	if (iIndex > 0)
 	{
@@ -1120,7 +1145,8 @@ STDMETHODIMP VideoCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYT
 	return S_OK;
 }
 
-bool VideoCapturePin::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
+template <class F>
+bool VideoCapturePin<F>::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
 {
 	pProperties->cbBuffer = mVideoFormat.imageSize;
 	if (pProperties->cBuffers < 1)

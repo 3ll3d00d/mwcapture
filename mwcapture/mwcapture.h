@@ -176,38 +176,14 @@ private:
 };
 
 /**
- * A stream of audio or video flowing from the capture device to an output pin.
- */
-class MagewellCapturePin :
-	public HdmiCapturePin<MagewellCaptureFilter, DEVICE_INFO, VIDEO_SIGNAL, AUDIO_SIGNAL>
-{
-public:
-    MagewellCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix);
-    ~MagewellCapturePin();
-
-protected:
-    void DoThreadDestroy() override;
-    virtual void StopCapture() = 0;
-
-	// Common - temp 
-    HNOTIFY mNotify;
-    ULONGLONG mStatusBits = 0;
-    HANDLE mNotifyEvent;
-    MW_RESULT mLastMwResult;
-    // pro only
-    HANDLE mCaptureEvent;
-};
-
-
-/**
  * A video stream flowing from the capture device to an output pin.
  */
 class MagewellVideoCapturePin :
-    public MagewellCapturePin,
-	public VideoCapturePin
+	public HdmiVideoCapturePin<MagewellCaptureFilter>
 {
 public:
     MagewellVideoCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
+    ~MagewellVideoCapturePin() override;
 
     //////////////////////////////////////////////////////////////////////////
     //  CBaseOutputPin
@@ -221,7 +197,18 @@ public:
     HRESULT OnThreadCreate(void) override;
 
 protected:
-    // Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
+    void DoThreadDestroy() override;
+    void StopCapture();
+
+	static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal, USB_CAPTURE_FORMATS* captureFormats);
+    // USB only
+    static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
+
+	void LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat);
+    HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
+    HRESULT LoadSignal(HCHANNEL* pChannel);
+
+	// Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
     class VideoFrameGrabber
     {
     public:
@@ -236,6 +223,7 @@ protected:
         HRESULT grab() const;
 
     private:
+        log_data mLogData;
         HCHANNEL hChannel;
         DeviceType deviceType;
         MagewellVideoCapturePin* pin;
@@ -252,8 +240,17 @@ protected:
 
     private:
         MagewellVideoCapturePin* pin;
+        log_data mLogData;
         HANDLE mEvent;
     };
+
+    // Common - temp 
+    HNOTIFY mNotify;
+    ULONGLONG mStatusBits = 0;
+    HANDLE mNotifyEvent;
+    MW_RESULT mLastMwResult;
+    // pro only
+    HANDLE mCaptureEvent;
 
     VIDEO_SIGNAL mVideoSignal{};
     USB_CAPTURE_FORMATS mUsbCaptureFormats{};
@@ -261,21 +258,13 @@ protected:
     // USB only
     VideoCapture* mVideoCapture{nullptr};
     CAPTURED_FRAME mCapturedFrame{};
-
-    static void LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL* videoSignal, USB_CAPTURE_FORMATS* captureFormats);
-    // USB only
-    static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
-
-    void LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat);
-    HRESULT LoadSignal(HCHANNEL* pChannel);
-    void StopCapture() override;
 };
 
 /**
  * An audio stream flowing from the capture device to an output pin.
  */
 class MagewellAudioCapturePin final :
-    public MagewellCapturePin
+	public HdmiAudioCapturePin<MagewellCaptureFilter>
 {
 public:
     MagewellAudioCapturePin(HRESULT* phr, MagewellCaptureFilter* pParent, bool pPreview);
@@ -313,11 +302,20 @@ protected:
         ~AudioCapture();
 
     private:
+        log_data mLogData;
         MagewellAudioCapturePin* pin;
         HANDLE mEvent;
     };
 
-	double minus_10db{ pow(10.0, -10.0 / 20.0) };
+    // Common - temp 
+    HNOTIFY mNotify;
+    ULONGLONG mStatusBits = 0;
+    HANDLE mNotifyEvent;
+    MW_RESULT mLastMwResult;
+    // pro only
+    HANDLE mCaptureEvent;
+
+    double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
     AUDIO_FORMAT mAudioFormat{};
     BYTE mFrameBuffer[maxFrameLengthInBytes];
@@ -359,8 +357,9 @@ protected:
     HRESULT LoadSignal(HCHANNEL* hChannel);
     bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
-    void StopCapture() override;
+    void StopCapture();
     bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
+    void DoThreadDestroy();
 };
 
 class MemAllocator final : public CMemAllocator
