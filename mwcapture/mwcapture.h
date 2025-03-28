@@ -17,6 +17,7 @@
 #include "capture.h"
 #include "LibMWCapture/MWCapture.h"
 #include "util.h"
+#include <wmcodecdsp.h>
 
 // HDMI Audio Bitstream Codec Identification metadata
 

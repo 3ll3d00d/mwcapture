@@ -19,7 +19,6 @@
 #include <windows.h>
 #include <process.h>
 #include <DXVA.h>
-#include <wmcodecdsp.h>
 #include <filesystem>
 #include <utility>
 // linking side data GUIDs fails without this
