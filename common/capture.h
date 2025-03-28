@@ -16,6 +16,7 @@
 #define NOMINMAX
 
 #include <string>
+#include <utility>
 
 #ifndef NO_QUILL
 #include <quill/Logger.h>
@@ -54,10 +55,8 @@ constexpr auto unity = 1.0;
 
 struct log_data
 {
-#ifndef NO_QUILL
-	std::string mLogPrefix;
-	CustomLogger* mLogger;
-#endif
+	CustomLogger* logger = nullptr;
+	std::string prefix{};
 };
 
 // Non template parts of the filter impl
@@ -117,7 +116,7 @@ public:
 	void OnHdrUpdated(MediaSideDataHDR* hdr, MediaSideDataHDRContentLightLevel* light);
 
 protected:
-	CaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID clsid, std::string logPrefix);
+	CaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID clsid, std::string pLogPrefix);
 
 	log_data mLogData{};
 	IReferenceClock* mClock;
@@ -140,7 +139,11 @@ public:
 	virtual void OnDeviceSelected() = 0;
 
 protected:
-	HdmiCaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID clsid, std::string logPrefix);
+	HdmiCaptureFilter(LPCTSTR pName, LPUNKNOWN punk, HRESULT* phr, CLSID clsid, std::string logPrefix) :
+		CaptureFilter(pName, punk, phr, clsid, logPrefix)
+	{
+		
+	}
 
 	D_INF mDeviceInfo{};
 };
@@ -150,10 +153,10 @@ class IAMTimeAware
 public:
 	void SetStartTime(LONGLONG streamStartTime);
 protected:
-	IAMTimeAware(std::string pLogPrefix, std::string pLoggerName)
+	IAMTimeAware(std::string pLogPrefix, const std::string& pLoggerName)
 	{
-		mLogData.mLogPrefix = std::move(pLogPrefix);
-		mLogData.mLogger = CustomFrontend::get_logger(pLoggerName);
+		mLogData.prefix = std::move(pLogPrefix);
+		mLogData.logger = CustomFrontend::get_logger(pLoggerName);
 	}
 
 	log_data mLogData{};
@@ -164,7 +167,6 @@ protected:
 /**
  * A stream of audio or video flowing from the capture device to an output pin.
  */
-template <class F>
 class CapturePin :
 	public CSourceStream,
 	public IAMStreamConfig,
@@ -178,7 +180,7 @@ public:
 
 	STDMETHODIMP NonDelegatingQueryInterface(REFIID riid, void** ppv) override;
 
-	void GetReferenceTime(REFERENCE_TIME* rt) const;
+	virtual void GetReferenceTime(REFERENCE_TIME* rt) const = 0;
 
 	//////////////////////////////////////////////////////////////////////////
 	//  IPin
@@ -236,16 +238,15 @@ public:
 	HRESULT SetMaxStreamOffset(REFERENCE_TIME rtMaxOffset) override { return E_NOTIMPL; }
 
 protected:
-	CapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix);
+	CapturePin(HRESULT* phr, CSource* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix);
 
 	virtual void DoThreadDestroy() = 0;
-	virtual bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties);
+	virtual bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) = 0;
 	HRESULT RenegotiateMediaType(const CMediaType* pmt, long newSize, boolean renegotiateOnQueryAccept);
 	HRESULT HandleStreamStateChange(IMediaSample* pms);
 
 	log_data mLogData{};
 	CCritSec mCaptureCritSec;
-	F* mFilter;
 	LONGLONG mFrameCounter;
 	bool mPreview;
 	WORD mSinceLast{0};
@@ -258,16 +259,14 @@ protected:
 	LONGLONG mFrameEndTime;
 };
 
-
 /**
  * A stream of video flowing from the capture device to an output pin.
  */
-template <class F>
-class VideoCapturePin : public CapturePin<F>
+class VideoCapturePin : public CapturePin
 {
 protected:
-	VideoCapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix) :
-		CapturePin<F>(phr, pParent, pObjectName, pPinName, pLogPrefix)
+	VideoCapturePin(HRESULT* phr, CSource* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix) :
+		CapturePin(phr, pParent, pObjectName, pPinName, pLogPrefix)
 	{
 	}
 
@@ -285,48 +284,56 @@ protected:
 	VIDEO_FORMAT mVideoFormat{};
 };
 
-template <class F>
-class HdmiVideoCapturePin : public VideoCapturePin<F>
-{
-public:
-	HdmiVideoCapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix)
-		: VideoCapturePin<F>(phr, pParent, pObjectName, pPinName, pLogPrefix)
-	{
-	}
-};
-
 /**
  * A stream of audio flowing from the capture device to an output pin.
  */
-template <class F>
-class AudioCapturePin : public CapturePin<F>
+class AudioCapturePin : public CapturePin
 {
 protected:
-	AudioCapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix) :
-		CapturePin<F>(phr, pParent, pObjectName, pPinName, pLogPrefix)
+	AudioCapturePin(HRESULT* phr, CSource* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix) :
+		CapturePin(phr, pParent, pObjectName, pPinName, pLogPrefix)
 	{
 	}
 
-	// CSourceStream
-	HRESULT GetMediaType(CMediaType* pmt);
-	// IAMStreamConfig
-	HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize);
-	HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC);
-	// CapturePin
-	bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties);
-
 	// void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
 	// bool ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat);
-
 	AUDIO_FORMAT mVideoFormat{};
 };
 
+
 template <class F>
-class HdmiAudioCapturePin : public AudioCapturePin<F>
+class HdmiVideoCapturePin : public VideoCapturePin
+{
+public:
+	HdmiVideoCapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix)
+		: VideoCapturePin(phr, pParent, pObjectName, pPinName, pLogPrefix),
+		mFilter(pParent)
+	{
+	}
+protected:
+	F* mFilter;
+
+	void GetReferenceTime(REFERENCE_TIME* rt) const override
+	{
+		mFilter->GetReferenceTime(rt);
+	}
+};
+
+
+template <class F>
+class HdmiAudioCapturePin : public AudioCapturePin
 {
 public:
 	HdmiAudioCapturePin(HRESULT* phr, F* pParent, LPCSTR pObjectName, LPCWSTR pPinName, std::string pLogPrefix)
-		: AudioCapturePin<F>(phr, pParent, pObjectName, pPinName, pLogPrefix)
+		: AudioCapturePin(phr, pParent, pObjectName, pPinName, pLogPrefix),
+		mFilter(pParent)
 	{
+	}
+protected:
+	F* mFilter;
+
+	void GetReferenceTime(REFERENCE_TIME* rt) const override
+	{
+		mFilter->GetReferenceTime(rt);
 	}
 };

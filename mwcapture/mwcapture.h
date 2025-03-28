@@ -85,7 +85,7 @@ struct AUDIO_SIGNAL
 
 enum DeviceType : uint8_t
 {
-    USB,
+	USB,
     PRO
 };
 
@@ -178,7 +178,7 @@ private:
 /**
  * A video stream flowing from the capture device to an output pin.
  */
-class MagewellVideoCapturePin :
+class MagewellVideoCapturePin final :
 	public HdmiVideoCapturePin<MagewellCaptureFilter>
 {
 public:
@@ -359,7 +359,7 @@ protected:
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
     void StopCapture();
     bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
-    void DoThreadDestroy();
+    void DoThreadDestroy() override;
 };
 
 class MemAllocator final : public CMemAllocator
