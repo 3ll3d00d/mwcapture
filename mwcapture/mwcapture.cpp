@@ -48,9 +48,6 @@
 constexpr auto bitstreamDetectionWindowSecs = 0.075;
 constexpr auto bitstreamDetectionRetryAfter = 1.0 / bitstreamDetectionWindowSecs;
 constexpr auto bitstreamBufferSize = 6144;
-constexpr auto chromaticity_scale_factor = 0.00002;
-constexpr auto high_luminance_scale_factor = 1.0;
-constexpr auto low_luminance_scale_factor = 0.0001;
 
 // bit depth -> pixel encoding -> fourcc
 constexpr DWORD fourcc[3][4] = {
@@ -434,11 +431,11 @@ MagewellVideoCapturePin::VideoCapture::~VideoCapture()
 //////////////////////////////////////////////////////////////////////////
 MagewellVideoCapturePin::VideoFrameGrabber::VideoFrameGrabber(MagewellVideoCapturePin* pin,
 	HCHANNEL hChannel, DeviceType deviceType, IMediaSample* pms) :
+	mLogData(pin->mLogData),
 	hChannel(hChannel),
 	deviceType(deviceType),
 	pin(pin),
-	pms(pms),
-	mLogData(pin->mLogData)
+	pms(pms)
 {
 	this->pms->GetPointer(&pmsData);
 
@@ -583,20 +580,20 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 	}
 	if (hasFrame)
 	{
-		// TODO MOVE THIS TO A BASE CLASS
+		if (pin->mVideoFormat.pixelStructure == MWFOURCC_AYUV)
+		{
+			// TODO endianness is wrong so flip the bytes on a pixel by pixel basis
+			// BYTE* istart = pmsData, * iend = istart + pin->mVideoFormat.imageSize;
+			// std::reverse(istart, iend);
+		}
+
+		// TODO move to a base class
 		pin->GetReferenceTime(&pin->mFrameEndTime);
 		auto endTime = pin->mFrameEndTime - pin->mStreamStartTime;
 		auto startTime = endTime - pin->mVideoFormat.frameInterval;
 		pms->SetTime(&startTime, &endTime);
 		pms->SetSyncPoint(TRUE);
 		pin->mFrameCounter++;
-
-		if (pin->mVideoFormat.pixelStructure == MWFOURCC_AYUV)
-		{
-			// TODO endianness is wrong so flip the bytes
-			BYTE* istart = pmsData, * iend = istart + pin->mVideoFormat.imageSize;
-			std::reverse(istart, iend);
-		}
 
 		#ifndef NO_QUILL
 		LOG_TRACE_L1(mLogData.logger, "[{}] Captured video frame {} at {}", mLogData.prefix,
@@ -611,88 +608,7 @@ HRESULT MagewellVideoCapturePin::VideoFrameGrabber::grab() const
 			DeleteMediaType(sendMediaType);
 			pin->mSendMediaType = FALSE;
 		}
-		// Update once per second
-		if (endTime > pin->mLastSentHdrMetaAt + oneSecondIn100ns)
-		{
-			pin->mLastSentHdrMetaAt = endTime;
-			if (pin->mVideoFormat.hdrMeta.exists)
-			{
-				// This can fail if you have a filter behind this which does not understand side data
-				IMediaSideData* pMediaSideData = nullptr;
-				if (SUCCEEDED(pms->QueryInterface(&pMediaSideData)))
-				{
-					#ifndef NO_QUILL
-					LOG_TRACE_L1(mLogData.logger, "[{}] Updating HDR meta in frame {}, last update at {}", mLogData.prefix,
-						pin->mFrameCounter, pin->mLastSentHdrMetaAt);
-					#endif
-
-					MediaSideDataHDR hdr;
-					ZeroMemory(&hdr, sizeof(hdr));
-
-					hdr.display_primaries_x[0] = pin->mVideoFormat.hdrMeta.g_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_x[1] = pin->mVideoFormat.hdrMeta.b_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_x[2] = pin->mVideoFormat.hdrMeta.r_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[0] = pin->mVideoFormat.hdrMeta.g_primary_y *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[1] = pin->mVideoFormat.hdrMeta.b_primary_y *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[2] = pin->mVideoFormat.hdrMeta.r_primary_y *
-						chromaticity_scale_factor;
-
-					hdr.white_point_x = pin->mVideoFormat.hdrMeta.whitepoint_x * chromaticity_scale_factor;
-					hdr.white_point_y = pin->mVideoFormat.hdrMeta.whitepoint_y * chromaticity_scale_factor;
-
-					hdr.max_display_mastering_luminance = pin->mVideoFormat.hdrMeta.maxDML *
-						high_luminance_scale_factor;
-					hdr.min_display_mastering_luminance = pin->mVideoFormat.hdrMeta.minDML *
-						low_luminance_scale_factor;
-
-					pMediaSideData->SetSideData(IID_MediaSideDataHDR, reinterpret_cast<const BYTE*>(&hdr),
-						sizeof(hdr));
-
-					MediaSideDataHDRContentLightLevel hdrLightLevel;
-					ZeroMemory(&hdrLightLevel, sizeof(hdrLightLevel));
-
-					hdrLightLevel.MaxCLL = pin->mVideoFormat.hdrMeta.maxCLL;
-					hdrLightLevel.MaxFALL = pin->mVideoFormat.hdrMeta.maxFALL;
-
-					pMediaSideData->SetSideData(IID_MediaSideDataHDRContentLightLevel,
-						reinterpret_cast<const BYTE*>(&hdrLightLevel),
-						sizeof(hdrLightLevel));
-					pMediaSideData->Release();
-
-					#ifndef NO_QUILL
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: R {:.4f} {:.4f}", mLogData.prefix,
-						hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: G {:.4f} {:.4f}", mLogData.prefix,
-						hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: B {:.4f} {:.4f}", mLogData.prefix,
-						hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: W {:.4f} {:.4f}", mLogData.prefix,
-						hdr.white_point_x, hdr.white_point_y);
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: DML {} {}", mLogData.prefix,
-						hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
-					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", mLogData.prefix,
-						hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
-					#endif
-
-					pin->mFilter->OnHdrUpdated(&hdr, &hdrLightLevel);
-				}
-				else
-				{
-					#ifndef NO_QUILL
-					LOG_WARNING(pin->mLogData.logger, "[{}] HDR meta to send via MediaSideDataHDR but not supported by MediaSample", mLogData.prefix);
-					#endif
-				}
-			}
-			else
-			{
-				pin->mFilter->OnHdrUpdated(nullptr, nullptr);
-			}
-		}
+		pin->AppendHdrSideDataIfNecessary(pms, endTime);
 	}
 	else
 	{
@@ -915,6 +831,7 @@ void MagewellVideoCapturePin::LoadFormat(VIDEO_FORMAT* videoFormat, VIDEO_SIGNAL
 	videoFormat->imageSize = FOURCC_CalcImageSize(videoFormat->pixelStructure, videoFormat->cx, videoFormat->cy, videoFormat->lineLength);
 }
 
+// TODO MOVE TO A BASE CLASS
 void MagewellVideoCapturePin::LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat)
 {
 	auto hdrIf = mVideoSignal.hdrInfo;
@@ -1608,68 +1525,6 @@ void MagewellAudioCapturePin::DoThreadDestroy()
 	{
 		CloseHandle(mCaptureEvent);
 	}
-}
-
-
-HRESULT MagewellAudioCapturePin::DecideAllocator(IMemInputPin* pPin, IMemAllocator** ppAlloc)
-{
-	// copied from CBaseOutputPin but preferring to use our own allocator first
-
-	HRESULT hr = NOERROR;
-	*ppAlloc = nullptr;
-
-	ALLOCATOR_PROPERTIES prop;
-	ZeroMemory(&prop, sizeof(prop));
-
-	pPin->GetAllocatorRequirements(&prop);
-	if (prop.cbAlign == 0)
-	{
-		prop.cbAlign = 1;
-	}
-
-	/* Try the allocator provided by the output pin. */
-	hr = InitAllocator(ppAlloc);
-	if (SUCCEEDED(hr))
-	{
-		hr = DecideBufferSize(*ppAlloc, &prop);
-		if (SUCCEEDED(hr))
-		{
-			hr = pPin->NotifyAllocator(*ppAlloc, FALSE);
-			if (SUCCEEDED(hr))
-			{
-				return NOERROR;
-			}
-		}
-	}
-
-	if (*ppAlloc)
-	{
-		(*ppAlloc)->Release();
-		*ppAlloc = nullptr;
-	}
-
-	/* Try the allocator provided by the input pin */
-	hr = pPin->GetAllocator(ppAlloc);
-	if (SUCCEEDED(hr))
-	{
-		hr = DecideBufferSize(*ppAlloc, &prop);
-		if (SUCCEEDED(hr))
-		{
-			hr = pPin->NotifyAllocator(*ppAlloc, FALSE);
-			if (SUCCEEDED(hr))
-			{
-				return NOERROR;
-			}
-		}
-	}
-
-	if (*ppAlloc)
-	{
-		(*ppAlloc)->Release();
-		*ppAlloc = nullptr;
-	}
-
-	return hr;
 }
 
 void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const
@@ -2597,121 +2452,6 @@ void MagewellAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_
 	}
 }
 
-void MagewellAudioCapturePin::AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat)
-{
-	// based on https://github.com/Nevcairiel/LAVFilters/blob/81c5676cb99d0acfb1457b8165a0becf5601cae3/decoder/LAVAudio/LAVAudio.cpp#L1186
-	pmt->majortype = MEDIATYPE_Audio;
-	pmt->formattype = FORMAT_WaveFormatEx;
-
-	if (audioFormat->codec == PCM)
-	{
-		// LAVAudio compatible big endian PCM
-		if (audioFormat->bitDepthInBytes == 3)
-		{
-			pmt->subtype = MEDIASUBTYPE_PCM_IN24;
-		}
-		else if (audioFormat->bitDepthInBytes == 4)
-		{
-			pmt->subtype = MEDIASUBTYPE_PCM_IN32;
-		}
-		else
-		{
-			pmt->subtype = MEDIASUBTYPE_PCM_SOWT;
-		}
-
-		WAVEFORMATEXTENSIBLE wfex;
-		memset(&wfex, 0, sizeof(wfex));
-
-		WAVEFORMATEX* wfe = &wfex.Format;
-		wfe->wFormatTag = static_cast<WORD>(pmt->subtype.Data1);
-		wfe->nChannels = audioFormat->outputChannelCount;
-		wfe->nSamplesPerSec = audioFormat->fs;
-		wfe->wBitsPerSample = audioFormat->bitDepth;
-		wfe->nBlockAlign = wfe->nChannels * wfe->wBitsPerSample / 8;
-		wfe->nAvgBytesPerSec = wfe->nSamplesPerSec * wfe->nBlockAlign;
-
-		if (audioFormat->outputChannelCount > 2 || wfe->wBitsPerSample > 16 || wfe->nSamplesPerSec > 48000)
-		{
-			wfex.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-			wfex.Format.cbSize = sizeof(wfex) - sizeof(wfex.Format);
-			wfex.dwChannelMask = audioFormat->channelMask;
-			wfex.Samples.wValidBitsPerSample = wfex.Format.wBitsPerSample;
-			wfex.SubFormat = pmt->subtype;
-		}
-		pmt->SetSampleSize(wfe->wBitsPerSample * wfe->nChannels / 8);
-		pmt->SetFormat(reinterpret_cast<BYTE*>(&wfex), sizeof(wfex.Format) + wfex.Format.cbSize);
-	}
-	else
-	{
-		// working assumption is that LAVAudio is downstream so use a format it supports
-		// https://learn.microsoft.com/en-us/windows/win32/coreaudio/representing-formats-for-iec-61937-transmissions
-		WAVEFORMATEXTENSIBLE_IEC61937 wf_iec61937;
-		memset(&wf_iec61937, 0, sizeof(wf_iec61937));
-		WAVEFORMATEXTENSIBLE* wf = &wf_iec61937.FormatExt;
-		wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-
-		switch (audioFormat->codec)
-		{
-		case AC3:
-			pmt->subtype = MEDIASUBTYPE_DOLBY_AC3;
-			wf->Format.nChannels = 2;						// 1 IEC 60958 Line.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL;
-			wf_iec61937.dwEncodedChannelCount = 6;
-			wf->Format.nSamplesPerSec = 48000;
-			break;
-		case EAC3:
-			pmt->subtype = MEDIASUBTYPE_DOLBY_DDPLUS;
-			wf->Format.nChannels = 2;						// 1 IEC 60958 Line.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_DIGITAL_PLUS;
-			wf_iec61937.dwEncodedChannelCount = 6;
-			wf->Format.nSamplesPerSec = 192000;
-			break;
-		case DTS:
-			pmt->subtype = MEDIASUBTYPE_DTS;
-			wf->Format.nChannels = 2;						// 1 IEC 60958 Lines.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_5POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DTS;
-			wf_iec61937.dwEncodedChannelCount = 6;
-			wf->Format.nSamplesPerSec = 48000;
-			break;
-		case DTSHD:
-			pmt->subtype = MEDIASUBTYPE_DTS_HD;
-			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DTS_HD;
-			wf_iec61937.dwEncodedChannelCount = 8;
-			wf->Format.nSamplesPerSec = 192000;
-			break;
-		case TRUEHD:
-			pmt->subtype = MEDIASUBTYPE_DOLBY_TRUEHD;
-			wf->Format.nChannels = 8;						// 4 IEC 60958 Lines.
-			wf->dwChannelMask = KSAUDIO_SPEAKER_7POINT1;
-			wf->SubFormat = KSDATAFORMAT_SUBTYPE_IEC61937_DOLBY_MLP;
-			wf_iec61937.dwEncodedChannelCount = 8;
-			wf->Format.nSamplesPerSec = 192000;
-			break;
-		case BITSTREAM:
-		case PCM:
-		case PAUSE_OR_NULL:
-			// should never get here
-			break;
-		}
-		wf_iec61937.dwEncodedSamplesPerSec = 48000;
-		wf_iec61937.dwAverageBytesPerSec = 0;
-		wf->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
-		wf->Format.wBitsPerSample = 16;
-		wf->Samples.wValidBitsPerSample = 16;
-		wf->Format.nBlockAlign = wf->Format.wBitsPerSample / 8 * wf->Format.nChannels;
-		wf->Format.nAvgBytesPerSec = wf->Format.nSamplesPerSec * wf->Format.nBlockAlign;
-		wf->Format.cbSize = sizeof(wf_iec61937) - sizeof(wf->Format);
-
-		pmt->SetSampleSize(wf->Format.nBlockAlign);
-		pmt->SetFormat(reinterpret_cast<BYTE*>(&wf_iec61937), sizeof(wf_iec61937) + wf->Format.cbSize);
-	}
-}
-
 HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 {
 	mLastMwResult = MWGetAudioSignalStatus(*hChannel, &mAudioSignal.signalStatus);
@@ -2778,71 +2518,6 @@ HRESULT MagewellAudioCapturePin::LoadSignal(HCHANNEL* hChannel)
 		return S_NO_CHANNELS;
 	}
 	return S_OK;
-}
-
-bool MagewellAudioCapturePin::ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat)
-{
-	auto reconnect = false;
-	if (mAudioFormat.inputChannelCount != newAudioFormat->inputChannelCount)
-	{
-		reconnect = true;
-
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Input channel count change {} to {}", mLogData.prefix, mAudioFormat.inputChannelCount,
-			newAudioFormat->inputChannelCount);
-		#endif
-	}
-	if (mAudioFormat.outputChannelCount != newAudioFormat->outputChannelCount)
-	{
-		reconnect = true;
-
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Output channel count change {} to {}", mLogData.prefix, mAudioFormat.outputChannelCount,
-			newAudioFormat->outputChannelCount);
-		#endif
-	}
-	if (mAudioFormat.bitDepthInBytes != newAudioFormat->bitDepthInBytes)
-	{
-		reconnect = true;
-
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Bit depth change {} to {}", mLogData.prefix, mAudioFormat.bitDepthInBytes,
-			newAudioFormat->bitDepthInBytes);
-		#endif
-	}
-	if (mAudioFormat.fs != newAudioFormat->fs)
-	{
-		reconnect = true;
-
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Fs change {} to {}", mLogData.prefix, mAudioFormat.fs, newAudioFormat->fs);
-		#endif
-	}
-	if (mAudioFormat.codec != newAudioFormat->codec)
-	{
-		reconnect = true;
-
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Codec change {} to {}", mLogData.prefix, codecNames[mAudioFormat.codec], codecNames[newAudioFormat->codec]);
-		#endif
-	}
-	if (mAudioFormat.channelAllocation != newAudioFormat->channelAllocation)
-	{
-		reconnect = true;
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Channel allocation change {} to {}", mLogData.prefix, mAudioFormat.channelAllocation,
-			newAudioFormat->channelAllocation);
-		#endif
-	}
-	if (mAudioFormat.codec != PCM && newAudioFormat->codec != PCM && mAudioFormat.dataBurstSize != newAudioFormat->dataBurstSize)
-	{
-		reconnect = true;
-		#ifndef NO_QUILL
-		LOG_INFO(mLogData.logger, "[{}] Bitstream databurst change {} to {}", mLogData.prefix, mAudioFormat.dataBurstSize,
-			newAudioFormat->dataBurstSize);
-		#endif
-	}
-	return reconnect;
 }
 
 void MagewellAudioCapturePin::CaptureFrame(const BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam)
@@ -3049,12 +2724,6 @@ HRESULT MagewellAudioCapturePin::FillBuffer(IMediaSample* pms)
 	return retVal;
 }
 
-HRESULT MagewellAudioCapturePin::GetMediaType(CMediaType* pmt)
-{
-	AudioFormatToMediaType(pmt, &mAudioFormat);
-	return NOERROR;
-}
-
 HRESULT MagewellAudioCapturePin::OnThreadCreate()
 {
 	#ifndef NO_QUILL
@@ -3100,42 +2769,6 @@ HRESULT MagewellAudioCapturePin::OnThreadCreate()
 		mAudioCapture = new AudioCapture(this, mFilter->GetChannelHandle());
 	}
 	return NOERROR;
-}
-
-STDMETHODIMP MagewellAudioCapturePin::GetNumberOfCapabilities(int* piCount, int* piSize)
-{
-	*piCount = 1;
-	*piSize = sizeof(AUDIO_STREAM_CONFIG_CAPS);
-	return S_OK;
-}
-
-STDMETHODIMP MagewellAudioCapturePin::GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC)
-{
-	if (iIndex > 0)
-	{
-		return S_FALSE;
-	}
-	if (iIndex < 0)
-	{
-		return E_INVALIDARG;
-	}
-	CMediaType cmt;
-	GetMediaType(&cmt);
-	*pmt = CreateMediaType(&cmt);
-
-	auto pascc = reinterpret_cast<AUDIO_STREAM_CONFIG_CAPS*>(pSCC);
-	pascc->guid = FORMAT_WaveFormatEx;
-	pascc->MinimumChannels = mAudioFormat.outputChannelCount;
-	pascc->MaximumChannels = mAudioFormat.outputChannelCount;
-	pascc->ChannelsGranularity = 1;
-	pascc->MinimumBitsPerSample = mAudioFormat.bitDepth;
-	pascc->MaximumBitsPerSample = mAudioFormat.bitDepth;
-	pascc->BitsPerSampleGranularity = 1;
-	pascc->MinimumSampleFrequency = mAudioFormat.fs;
-	pascc->MaximumSampleFrequency = mAudioFormat.fs;
-	pascc->SampleFrequencyGranularity = 1;
-
-	return S_OK;
 }
 
 HRESULT MagewellAudioCapturePin::DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat)
@@ -3775,30 +3408,4 @@ HRESULT MagewellAudioCapturePin::GetCodecFromIEC61937Preamble(const IEC61937Data
 		break;
 	}
 	return S_OK;
-}
-
-//////////////////////////////////////////////////////////////////////////
-// MemAllocator 
-//////////////////////////////////////////////////////////////////////////
-MemAllocator::MemAllocator(LPUNKNOWN pUnk, HRESULT* pHr) : CMemAllocator("MemAllocator", pUnk, pHr)
-{
-	// exists purely to allow for easy debugging of what is going on inside CMemAllocator
-}
-
-HRESULT MagewellAudioCapturePin::InitAllocator(IMemAllocator** ppAllocator)
-{
-	HRESULT hr = S_OK;
-	auto pAlloc = new MemAllocator(nullptr, &hr);
-	if (!pAlloc)
-	{
-		return E_OUTOFMEMORY;
-	}
-
-	if (FAILED(hr))
-	{
-		delete pAlloc;
-		return hr;
-	}
-
-	return pAlloc->QueryInterface(IID_IMemAllocator, reinterpret_cast<void**>(ppAllocator));
 }

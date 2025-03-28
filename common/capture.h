@@ -42,6 +42,7 @@ using CustomLogger = quill::LoggerImpl<CustomFrontendOptions>;
 #include "ISpecifyPropertyPages2.h"
 #include "lavfilters_side_data.h"
 #include "dvdmedia.h"
+#include <wmcodecdsp.h>
 
 EXTERN_C const GUID MEDIASUBTYPE_PCM_IN24;
 EXTERN_C const GUID MEDIASUBTYPE_PCM_IN32;
@@ -52,6 +53,10 @@ EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
 #define SHORT_BACKOFF Sleep(1)
 
 constexpr auto unity = 1.0;
+constexpr LONGLONG oneSecondIn100ns = 10000000L;
+constexpr auto chromaticity_scale_factor = 0.00002;
+constexpr auto high_luminance_scale_factor = 1.0;
+constexpr auto low_luminance_scale_factor = 0.0001;
 
 struct log_data
 {
@@ -294,10 +299,26 @@ protected:
 		CapturePin(phr, pParent, pObjectName, pPinName, pLogPrefix)
 	{
 	}
+	static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
 
-	// void VideoFormatToMediaType(CMediaType* pmt, VIDEO_FORMAT* videoFormat) const;
-	// bool ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat);
-	AUDIO_FORMAT mVideoFormat{};
+	bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
+
+	//////////////////////////////////////////////////////////////////////////
+	//  CSourceStream
+	//////////////////////////////////////////////////////////////////////////
+	HRESULT GetMediaType(CMediaType* pmt) override;
+	//////////////////////////////////////////////////////////////////////////
+	//  CBaseOutputPin
+	//////////////////////////////////////////////////////////////////////////
+	HRESULT DecideAllocator(IMemInputPin* pPin, __deref_out IMemAllocator** pAlloc) override;
+	HRESULT InitAllocator(__deref_out IMemAllocator** ppAlloc) override;
+	//////////////////////////////////////////////////////////////////////////
+	//  IAMStreamConfig
+	//////////////////////////////////////////////////////////////////////////
+	HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
+	HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
+
+	AUDIO_FORMAT mAudioFormat{};
 };
 
 
@@ -316,6 +337,92 @@ protected:
 	void GetReferenceTime(REFERENCE_TIME* rt) const override
 	{
 		mFilter->GetReferenceTime(rt);
+	}
+
+	void AppendHdrSideDataIfNecessary(IMediaSample* pms, long long endTime)
+	{
+		// Update once per second at most
+		if (endTime > mLastSentHdrMetaAt + oneSecondIn100ns)
+		{
+			mLastSentHdrMetaAt = endTime;
+			if (mVideoFormat.hdrMeta.exists)
+			{
+				// This can fail if you have a filter behind this which does not understand side data
+				IMediaSideData* pMediaSideData = nullptr;
+				if (SUCCEEDED(pms->QueryInterface(&pMediaSideData)))
+				{
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(mLogData.logger, "[{}] Updating HDR meta in frame {}, last update at {}", mLogData.prefix,
+						mFrameCounter, mLastSentHdrMetaAt);
+					#endif
+
+					MediaSideDataHDR hdr;
+					ZeroMemory(&hdr, sizeof(hdr));
+
+					hdr.display_primaries_x[0] = mVideoFormat.hdrMeta.g_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_x[1] = mVideoFormat.hdrMeta.b_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_x[2] = mVideoFormat.hdrMeta.r_primary_x *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[0] = mVideoFormat.hdrMeta.g_primary_y *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[1] = mVideoFormat.hdrMeta.b_primary_y *
+						chromaticity_scale_factor;
+					hdr.display_primaries_y[2] = mVideoFormat.hdrMeta.r_primary_y *
+						chromaticity_scale_factor;
+
+					hdr.white_point_x = mVideoFormat.hdrMeta.whitepoint_x * chromaticity_scale_factor;
+					hdr.white_point_y = mVideoFormat.hdrMeta.whitepoint_y * chromaticity_scale_factor;
+
+					hdr.max_display_mastering_luminance = mVideoFormat.hdrMeta.maxDML *
+						high_luminance_scale_factor;
+					hdr.min_display_mastering_luminance = mVideoFormat.hdrMeta.minDML *
+						low_luminance_scale_factor;
+
+					pMediaSideData->SetSideData(IID_MediaSideDataHDR, reinterpret_cast<const BYTE*>(&hdr),
+						sizeof(hdr));
+
+					MediaSideDataHDRContentLightLevel hdrLightLevel;
+					ZeroMemory(&hdrLightLevel, sizeof(hdrLightLevel));
+
+					hdrLightLevel.MaxCLL = mVideoFormat.hdrMeta.maxCLL;
+					hdrLightLevel.MaxFALL = mVideoFormat.hdrMeta.maxFALL;
+
+					pMediaSideData->SetSideData(IID_MediaSideDataHDRContentLightLevel,
+						reinterpret_cast<const BYTE*>(&hdrLightLevel),
+						sizeof(hdrLightLevel));
+					pMediaSideData->Release();
+
+					#ifndef NO_QUILL
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: R {:.4f} {:.4f}", mLogData.prefix,
+						hdr.display_primaries_x[2], hdr.display_primaries_y[2]);
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: G {:.4f} {:.4f}", mLogData.prefix,
+						hdr.display_primaries_x[0], hdr.display_primaries_y[0]);
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: B {:.4f} {:.4f}", mLogData.prefix,
+						hdr.display_primaries_x[1], hdr.display_primaries_y[1]);
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: W {:.4f} {:.4f}", mLogData.prefix,
+						hdr.white_point_x, hdr.white_point_y);
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: DML {} {}", mLogData.prefix,
+						hdr.min_display_mastering_luminance, hdr.max_display_mastering_luminance);
+					LOG_TRACE_L1(mLogData.logger, "[{}] HDR meta: MaxCLL/MaxFALL {} {}", mLogData.prefix,
+						hdrLightLevel.MaxCLL, hdrLightLevel.MaxFALL);
+					#endif
+
+					mFilter->OnHdrUpdated(&hdr, &hdrLightLevel);
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogData.logger, "[{}] HDR meta to send via MediaSideDataHDR but not supported by MediaSample", mLogData.prefix);
+					#endif
+				}
+			}
+			else
+			{
+				mFilter->OnHdrUpdated(nullptr, nullptr);
+			}
+		}
 	}
 };
 
@@ -336,4 +443,10 @@ protected:
 	{
 		mFilter->GetReferenceTime(rt);
 	}
+};
+
+class MemAllocator final : public CMemAllocator
+{
+public:
+	MemAllocator(__inout_opt LPUNKNOWN, __inout HRESULT*);
 };

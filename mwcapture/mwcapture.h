@@ -17,7 +17,6 @@
 #include "capture.h"
 #include "LibMWCapture/MWCapture.h"
 #include "util.h"
-#include <wmcodecdsp.h>
 
 // HDMI Audio Bitstream Codec Identification metadata
 
@@ -54,7 +53,6 @@ enum IEC61937DataType : uint8_t
 
 constexpr int maxBitDepthInBytes = sizeof(DWORD);
 constexpr int maxFrameLengthInBytes = MWCAP_AUDIO_SAMPLES_PER_FRAME * MWCAP_AUDIO_MAX_NUM_CHANNELS * maxBitDepthInBytes;
-constexpr LONGLONG oneSecondIn100ns = 10000000L;
 
 EXTERN_C const GUID CLSID_MWCAPTURE_FILTER;
 
@@ -278,20 +276,11 @@ public:
 	//////////////////////////////////////////////////////////////////////////
     //  CBaseOutputPin
     //////////////////////////////////////////////////////////////////////////
-    HRESULT DecideAllocator(IMemInputPin* pPin, __deref_out IMemAllocator** pAlloc) override;
-    HRESULT InitAllocator(__deref_out IMemAllocator** ppAlloc) override;
     HRESULT GetDeliveryBuffer(__deref_out IMediaSample** ppSample, __in_opt REFERENCE_TIME* pStartTime, __in_opt REFERENCE_TIME* pEndTime, DWORD dwFlags) override;
-
-	//////////////////////////////////////////////////////////////////////////
-    //  IAMStreamConfig
-    //////////////////////////////////////////////////////////////////////////
-    HRESULT STDMETHODCALLTYPE GetNumberOfCapabilities(int* piCount, int* piSize) override;
-    HRESULT STDMETHODCALLTYPE GetStreamCaps(int iIndex, AM_MEDIA_TYPE** pmt, BYTE* pSCC) override;
 
     //////////////////////////////////////////////////////////////////////////
     //  CSourceStream
     //////////////////////////////////////////////////////////////////////////
-    HRESULT GetMediaType(CMediaType* pmt) override;
     HRESULT OnThreadCreate(void) override;
     HRESULT FillBuffer(IMediaSample* pms) override;
 
@@ -318,7 +307,6 @@ protected:
 
     double minus_10db{ pow(10.0, -10.0 / 20.0) };
     AUDIO_SIGNAL mAudioSignal{};
-    AUDIO_FORMAT mAudioFormat{};
     BYTE mFrameBuffer[maxFrameLengthInBytes];
     // IEC61937 processing
     uint32_t mBitstreamDetectionWindowLength{ 0 };
@@ -351,20 +339,12 @@ protected:
     Codec mDetectedCodec{ PCM };
     bool mProbeOnTimer{ false };
 
-    static void AudioFormatToMediaType(CMediaType* pmt, AUDIO_FORMAT* audioFormat);
     static void CaptureFrame(const BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
 	void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
     HRESULT LoadSignal(HCHANNEL* hChannel);
-    bool ShouldChangeMediaType(AUDIO_FORMAT* newAudioFormat);
     HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
     void StopCapture();
     bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
     void DoThreadDestroy() override;
-};
-
-class MemAllocator final : public CMemAllocator
-{
-public:
-    MemAllocator(__inout_opt LPUNKNOWN, __inout HRESULT*);
 };
