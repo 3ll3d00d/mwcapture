@@ -19,6 +19,7 @@
 #include <ksmedia.h>
 
 constexpr auto not_present = 1024;
+constexpr LONGLONG dshowTicksPerSecond = 10000000LL;  // 1s / 100ns
 
 struct DEVICE_STATUS
 {
@@ -28,20 +29,38 @@ struct DEVICE_STATUS
 struct HDR_META
 {
 	bool exists{false};
-	int r_primary_x{0};
-	int r_primary_y{0};
-	int g_primary_x{0};
-	int g_primary_y{0};
-	int b_primary_x{0};
-	int b_primary_y{0};
-	int whitepoint_x{0};
-	int whitepoint_y{0};
-	int minDML{0};
-	int maxDML{0};
+	double r_primary_x{0.0};
+	double r_primary_y{0.0};
+	double g_primary_x{0.0};
+	double g_primary_y{0.0};
+	double b_primary_x{0.0};
+	double b_primary_y{0.0};
+	double whitepoint_x{0.0};
+	double whitepoint_y{0.0};
+	double minDML{0.0};
+	double maxDML{0.0};
 	int maxCLL{0};
 	int maxFALL{0};
 	int transferFunction{0};
 };
+
+inline boolean hdrMetaExists(const HDR_META* hdrOut)
+{
+	return
+		hdrOut->r_primary_x != 0.0 &&
+		hdrOut->r_primary_y != 0.0 &&
+		hdrOut->g_primary_x != 0.0 &&
+		hdrOut->g_primary_y != 0.0 &&
+		hdrOut->b_primary_x != 0.0 &&
+		hdrOut->b_primary_y != 0.0 &&
+		hdrOut->whitepoint_x != 0.0 &&
+		hdrOut->whitepoint_y != 0.0 &&
+		hdrOut->minDML != 0.0 &&
+		hdrOut->maxDML != 0.0 &&
+		hdrOut->maxCLL != 0 &&
+		hdrOut->maxFALL != 0;
+
+}
 
 struct AUDIO_INPUT_STATUS
 {
@@ -122,7 +141,8 @@ enum colour_format :std::uint8_t
 	YUV601 = 2, ///<YUV601
 	YUV709 = 3, ///<YUV709
 	YUV2020 = 4, ///<YUV2020
-	YUV2020C = 5 ///<YUV2020C
+	YUV2020C = 5, ///<YUV2020C
+	P3D65 = 6 ///<P3D65
 };
 
 enum pixel_encoding:std::uint8_t
@@ -157,11 +177,12 @@ struct VIDEO_FORMAT
 	int cy{ 2160 };
 	double fps{ 50.0 };
 	LONGLONG frameInterval{ 200000 };
+	HDR_META hdrMeta;
+	// magewell only
 	int aspectX{ 16 };
 	int aspectY{ 9 };
 	quantisation_range quantisation{ QUANTISATION_LIMITED };
 	saturation_range saturation{ SATURATION_LIMITED };
-	HDR_META hdrMeta;
 	// derived from the above attributes
 	byte bitCount;
 	DWORD pixelStructure; // fourcc
@@ -198,7 +219,7 @@ struct AUDIO_FORMAT
 {
 	boolean pcm{ true };
 	DWORD fs{ 48000 };
-	double sampleInterval{ 10000000.0 / 48000 };
+	double sampleInterval{ static_cast<double>(dshowTicksPerSecond) / 48000 };
 	BYTE bitDepth{ 16 };
 	BYTE bitDepthInBytes{ 2 };
 	BYTE channelAllocation{ 0x00 };

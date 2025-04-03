@@ -53,16 +53,79 @@ EXTERN_C const AMOVIESETUP_PIN sMIPPins[];
 #define SHORT_BACKOFF Sleep(1)
 
 constexpr auto unity = 1.0;
-constexpr LONGLONG oneSecondIn100ns = 10000000L;
-constexpr auto chromaticity_scale_factor = 0.00002;
-constexpr auto high_luminance_scale_factor = 1.0;
-constexpr auto low_luminance_scale_factor = 0.0001;
 
 struct log_data
 {
 	CustomLogger* logger = nullptr;
 	std::string prefix{};
 };
+
+inline boolean diff(double x, double y)
+{
+	return fabs(x - y) > 0.000001;
+}
+
+inline void logHdrMeta(HDR_META newMeta, HDR_META oldMeta, log_data log)
+{
+	if (newMeta.exists)
+	{
+		bool logPrimaries;
+		bool logWp;
+		bool logMax;
+		if (oldMeta.exists)
+		{
+			logPrimaries =
+				diff(newMeta.r_primary_x, oldMeta.r_primary_x)
+				|| diff(newMeta.r_primary_y, oldMeta.r_primary_y)
+				|| diff(newMeta.g_primary_x, oldMeta.g_primary_x)
+				|| diff(newMeta.g_primary_y, oldMeta.g_primary_y)
+				|| diff(newMeta.b_primary_x, oldMeta.b_primary_x)
+				|| diff(newMeta.b_primary_y, oldMeta.b_primary_y);
+			logWp = diff(newMeta.whitepoint_x, oldMeta.whitepoint_x)
+				|| diff(newMeta.whitepoint_y, oldMeta.whitepoint_y);
+			logMax =
+				diff(newMeta.maxCLL, oldMeta.maxCLL)
+				|| diff(newMeta.minDML, oldMeta.minDML)
+				|| diff(newMeta.maxDML, oldMeta.maxDML)
+				|| newMeta.maxFALL != oldMeta.maxFALL;
+			if (logPrimaries || logWp || logMax)
+			{
+				LOG_INFO(log.logger, "[{}] HDR metadata has changed", log.prefix);
+			}
+		}
+		else
+		{
+			logPrimaries = true;
+			logWp = true;
+			logMax = true;
+			LOG_INFO(log.logger, "[{}] HDR metadata is now present", log.prefix);
+		}
+
+		if (logPrimaries)
+		{
+			LOG_INFO(log.logger, "[{}] Primaries RGB {:.4f} x {:.4f} {:.4f} x {:.4f} {:.4f} x {:.4f}",
+				log.prefix,
+				newMeta.r_primary_x, newMeta.r_primary_y, newMeta.g_primary_x, newMeta.g_primary_y,
+				newMeta.b_primary_x, newMeta.b_primary_y);
+		}
+		if (logWp)
+		{
+			LOG_INFO(log.logger, "[{}] Whitepoint {:.4f} x {:.4f}", log.prefix,
+				newMeta.whitepoint_x, newMeta.whitepoint_y);
+		}
+		if (logMax)
+		{
+			LOG_INFO(log.logger, "[{}] DML/MaxCLL/MaxFALL {:.4f} / {:.4f} {} {}", log.prefix,
+				newMeta.minDML, newMeta.maxDML, newMeta.maxCLL, newMeta.maxFALL);
+		}
+	}
+	else
+	{
+		LOG_WARNING(log.logger,
+			"[{}] HDR InfoFrame parsing failure, values are present but no metadata exists",
+			log.prefix);
+	}
+}
 
 // Non template parts of the filter impl
 class CaptureFilter :
@@ -342,7 +405,7 @@ protected:
 	void AppendHdrSideDataIfNecessary(IMediaSample* pms, long long endTime)
 	{
 		// Update once per second at most
-		if (endTime > mLastSentHdrMetaAt + oneSecondIn100ns)
+		if (endTime > mLastSentHdrMetaAt + dshowTicksPerSecond)
 		{
 			mLastSentHdrMetaAt = endTime;
 			if (mVideoFormat.hdrMeta.exists)
@@ -359,26 +422,18 @@ protected:
 					MediaSideDataHDR hdr;
 					ZeroMemory(&hdr, sizeof(hdr));
 
-					hdr.display_primaries_x[0] = mVideoFormat.hdrMeta.g_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_x[1] = mVideoFormat.hdrMeta.b_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_x[2] = mVideoFormat.hdrMeta.r_primary_x *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[0] = mVideoFormat.hdrMeta.g_primary_y *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[1] = mVideoFormat.hdrMeta.b_primary_y *
-						chromaticity_scale_factor;
-					hdr.display_primaries_y[2] = mVideoFormat.hdrMeta.r_primary_y *
-						chromaticity_scale_factor;
+					hdr.display_primaries_x[0] = mVideoFormat.hdrMeta.g_primary_x;
+					hdr.display_primaries_x[1] = mVideoFormat.hdrMeta.b_primary_x;
+					hdr.display_primaries_x[2] = mVideoFormat.hdrMeta.r_primary_x;
+					hdr.display_primaries_y[0] = mVideoFormat.hdrMeta.g_primary_y;
+					hdr.display_primaries_y[1] = mVideoFormat.hdrMeta.b_primary_y;
+					hdr.display_primaries_y[2] = mVideoFormat.hdrMeta.r_primary_y;
 
-					hdr.white_point_x = mVideoFormat.hdrMeta.whitepoint_x * chromaticity_scale_factor;
-					hdr.white_point_y = mVideoFormat.hdrMeta.whitepoint_y * chromaticity_scale_factor;
+					hdr.white_point_x = mVideoFormat.hdrMeta.whitepoint_x;
+					hdr.white_point_y = mVideoFormat.hdrMeta.whitepoint_y;
 
-					hdr.max_display_mastering_luminance = mVideoFormat.hdrMeta.maxDML *
-						high_luminance_scale_factor;
-					hdr.min_display_mastering_luminance = mVideoFormat.hdrMeta.minDML *
-						low_luminance_scale_factor;
+					hdr.max_display_mastering_luminance = mVideoFormat.hdrMeta.maxDML;
+					hdr.min_display_mastering_luminance = mVideoFormat.hdrMeta.minDML;
 
 					pMediaSideData->SetSideData(IID_MediaSideDataHDR, reinterpret_cast<const BYTE*>(&hdr),
 						sizeof(hdr));
