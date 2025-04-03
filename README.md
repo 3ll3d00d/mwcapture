@@ -14,10 +14,11 @@ There are no end user configuration options available as the filter is designed 
 
 Note that such live updates to audio and video formats rely on the downstream filters (renderers, audio output) to accept dynamic format changes. Such behaviour is supported by both JRiver and mpc-hc.
 
-## Installation
+## Initial Installation
 
 * Download the latest release from https://github.com/3ll3d00d/mwcapture/releases & unzip to some directory
-* Open an admin cmd prompt in that directory
+* execute MWCaptureRT.exe
+* Open an admin cmd prompt in the directory
 * If using the trace-release or warn-release package, rename `mwcapture.ax` to `mwcapture-trace.ax` or `mwcapture-warn.ax`
 * Register the filter using `regsvr32`, e.g. `regsvr32 mwcapture.ax`
 
