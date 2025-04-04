@@ -55,12 +55,13 @@ inline bool isInCieRange(double value)
 }
 
 constexpr int64_t invalidFrameTime = std::numeric_limits<int64_t>::lowest();
+constexpr BMDAudioSampleType audioBitDepth = bmdAudioSampleType16bitInteger;
 
 struct DEVICE_INFO
 {
 	std::string name{};
 	int apiVersion[3]{0, 0, 0};
-	int64_t audioChannelCount{0};
+	uint8_t audioChannelCount{0};
 	bool inputFormatDetection{false};
 	bool hdrMetadata{false};
 	bool colourspaceMetadata{false};
@@ -80,12 +81,41 @@ struct VIDEO_SIGNAL
 
 struct AUDIO_SIGNAL
 {
+	uint8_t channelCount{0};
+	uint8_t bitDepth{0};
+};
+
+class AudioFrame
+{
+public:
+	AudioFrame(int64_t time, void* data, long len, AUDIO_FORMAT fmt) :
+		mFrameTime(time),
+		mData(data),
+		mLength(len),
+		mFormat(std::move(fmt))
+	{
+	}
+
+	int64_t GetFrameTime() const { return mFrameTime; }
+
+	void* GetData() const { return mData; }
+
+	long GetLength() const { return mLength; }
+
+	AUDIO_FORMAT GetFormat() const { return mFormat; }
+
+private:
+	int64_t mFrameTime{0};
+	void* mData = nullptr;
+	long mLength{0};
+	AUDIO_FORMAT mFormat{};
 };
 
 class VideoFrame
 {
 public:
-	VideoFrame(VIDEO_FORMAT format, int64_t time, uint64_t index, long rowSize, const CComQIPtr<IDeckLinkVideoBuffer>& buffer) :
+	VideoFrame(VIDEO_FORMAT format, int64_t time, uint64_t index, long rowSize,
+	           const CComQIPtr<IDeckLinkVideoBuffer>& buffer) :
 		mFormat(std::move(format)),
 		mFrameTime(time),
 		mFrameIndex(index),
@@ -126,7 +156,7 @@ private:
 	VIDEO_FORMAT mFormat{};
 	int64_t mFrameTime{0};
 	uint64_t mFrameIndex{0};
-	long mLength{ 0 };
+	long mLength{0};
 	CComQIPtr<IDeckLinkVideoBuffer> mBuffer;
 	void* mFrameData = nullptr;
 };
@@ -211,10 +241,24 @@ public:
 		return CaptureFilter::Release();
 	}
 
-	HANDLE GetVideoFrameHandle() const;
+	HANDLE GetVideoFrameHandle() const
+	{
+		return mVideoFrameEvent;
+	}
+
 	std::shared_ptr<VideoFrame> GetVideoFrame()
 	{
-		return mCurrentFrame;
+		return mVideoFrame;
+	}
+
+	HANDLE GetAudioFrameHandle() const
+	{
+		return mAudioFrameEvent;
+	}
+
+	std::shared_ptr<AudioFrame> GetAudioFrame()
+	{
+		return mAudioFrame;
 	}
 
 private:
@@ -233,8 +277,13 @@ private:
 	VIDEO_FORMAT mVideoFormat{};
 	int64_t mPreviousVideoFrameTime{invalidFrameTime};
 	uint64_t mCapturedVideoFrameCount{0};
-	std::shared_ptr<VideoFrame> mCurrentFrame;
+	std::shared_ptr<VideoFrame> mVideoFrame;
 	HANDLE mVideoFrameEvent;
+
+	int64_t mPreviousAudioFrameTime{invalidFrameTime};
+	uint64_t mCapturedAudioFrameCount{0};
+	std::shared_ptr<AudioFrame> mAudioFrame;
+	HANDLE mAudioFrameEvent;
 };
 
 
@@ -264,9 +313,8 @@ protected:
 	void DoThreadDestroy() override;
 
 	void LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat);
-	HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
+	void OnChangeMediaType() const;
 
-	VIDEO_FORMAT mVideoFormat{};
 	std::shared_ptr<VideoFrame> mCurrentFrame;
 };
 
@@ -289,14 +337,13 @@ public:
 	//////////////////////////////////////////////////////////////////////////
 	//  CSourceStream
 	//////////////////////////////////////////////////////////////////////////
-	HRESULT OnThreadCreate(void) override;
+	HRESULT OnThreadCreate() override;
 	HRESULT FillBuffer(IMediaSample* pms) override;
 
 protected:
-	AUDIO_SIGNAL mAudioSignal{};
-
-	void LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const;
 	HRESULT DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat);
 	bool ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties) override;
 	void DoThreadDestroy() override;
+
+	std::shared_ptr<AudioFrame> mCurrentFrame;
 };

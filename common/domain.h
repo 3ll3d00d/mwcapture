@@ -19,7 +19,7 @@
 #include <ksmedia.h>
 
 constexpr auto not_present = 1024;
-constexpr LONGLONG dshowTicksPerSecond = 10000000LL;  // 1s / 100ns
+constexpr LONGLONG dshowTicksPerSecond = 10LL * 1000 * 1000; // 100ns 
 
 struct DEVICE_STATUS
 {

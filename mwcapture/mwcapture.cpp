@@ -988,39 +988,20 @@ HRESULT MagewellVideoCapturePin::LoadSignal(HCHANNEL* pChannel)
 	return S_OK;
 }
 
-HRESULT MagewellVideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat)
+void MagewellVideoCapturePin::OnChangeMediaType()
 {
-	#ifndef NO_QUILL
-	LOG_WARNING(
-		mLogData.logger,
-		"[{}] Proposing new video format {} x {} ({}:{}) @ {:.3f} Hz in {} bits ({} {} tf: {}) size {} bytes",
-		mLogData.prefix,
-		newVideoFormat->cx, newVideoFormat->cy, newVideoFormat->aspectX, newVideoFormat->aspectY, newVideoFormat->fps,
-		newVideoFormat->bitDepth,
-		newVideoFormat->pixelStructureName, newVideoFormat->colourFormatName, newVideoFormat->hdrMeta.transferFunction,
-		newVideoFormat->imageSize);
-	#endif
-
-	auto retVal = RenegotiateMediaType(pmt, newVideoFormat->imageSize,
-	                                   newVideoFormat->imageSize != mVideoFormat.imageSize);
-	if (retVal == S_OK)
+	mFilter->NotifyEvent(EC_VIDEO_SIZE_CHANGED, MAKELPARAM(mVideoFormat.cx, mVideoFormat.cy), 0);
+	if (mFilter->GetDeviceType() == USB)
 	{
-		mFilter->NotifyEvent(EC_VIDEO_SIZE_CHANGED, MAKELPARAM(newVideoFormat->cx, newVideoFormat->cy), 0);
-		if (mFilter->GetDeviceType() == USB)
+		delete mVideoCapture;
+		mVideoCapture = new VideoCapture(this, mFilter->GetChannelHandle());
+		if (mVideoFormat.imageSize > mVideoFormat.imageSize)
 		{
-			delete mVideoCapture;
-			mVideoCapture = new VideoCapture(this, mFilter->GetChannelHandle());
-			if (newVideoFormat->imageSize > mVideoFormat.imageSize)
-			{
-				CAutoLock lck(&mCaptureCritSec);
-				delete mCapturedFrame.data;
-				mCapturedFrame.data = new BYTE[newVideoFormat->imageSize];
-			}
+			CAutoLock lck(&mCaptureCritSec);
+			delete mCapturedFrame.data;
+			mCapturedFrame.data = new BYTE[mVideoFormat.imageSize];
 		}
-		mVideoFormat = *newVideoFormat;
 	}
-
-	return retVal;
 }
 
 void MagewellVideoCapturePin::CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam)

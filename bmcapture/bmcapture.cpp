@@ -57,14 +57,10 @@ CUnknown* BlackmagicCaptureFilter::CreateInstance(LPUNKNOWN punk, HRESULT* phr)
 	return pNewObject;
 }
 
-HANDLE BlackmagicCaptureFilter::GetVideoFrameHandle() const
-{
-	return mVideoFrameEvent;
-}
-
 BlackmagicCaptureFilter::BlackmagicCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 	HdmiCaptureFilter(L"BlackmagicCaptureFilter", punk, phr, CLSID_BMCAPTURE_FILTER, "BlackmagicCaptureFilter"),
-	mVideoFrameEvent(CreateEvent(nullptr, FALSE, FALSE, nullptr))
+	mVideoFrameEvent(CreateEvent(nullptr, FALSE, FALSE, nullptr)),
+	mAudioFrameEvent(CreateEvent(nullptr, FALSE, FALSE, nullptr))
 {
 	// load the API
 	IDeckLinkIterator* deckLinkIterator = nullptr;
@@ -243,7 +239,6 @@ BlackmagicCaptureFilter::BlackmagicCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 				mDeviceInfo.colourspaceMetadata = colourspaceMetadata;
 				mDeviceInfo.dynamicRangeMetadata = dynamicRangeMetadata;
 
-
 				const LONGLONG all = bmdDynamicRangeSDR | bmdDynamicRangeHDRStaticPQ | bmdDynamicRangeHDRStaticHLG;
 				result = mDeckLinkHDMIInputEDID->SetInt(bmdDeckLinkHDMIInputEDIDDynamicRange, all);
 				if (SUCCEEDED(result))
@@ -283,8 +278,7 @@ BlackmagicCaptureFilter::BlackmagicCaptureFilter(LPUNKNOWN punk, HRESULT* phr) :
 				}
 				if (mDeviceInfo.audioChannelCount > 0)
 				{
-					result = mDeckLinkInput->EnableAudioInput(bmdAudioSampleRate48kHz, bmdAudioSampleType16bitInteger,
-					                                          mDeviceInfo.audioChannelCount);
+					result = mDeckLinkInput->EnableAudioInput(bmdAudioSampleRate48kHz, audioBitDepth, mDeviceInfo.audioChannelCount);
 					// NOLINT(clang-diagnostic-shorten-64-to-32) values will only be 0/2/8/16
 					if (!SUCCEEDED(result))
 					{
@@ -482,7 +476,7 @@ HRESULT BlackmagicCaptureFilter::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			return E_FAIL;
 		}
 
-		VIDEO_FORMAT newVideoFormat;
+		VIDEO_FORMAT newVideoFormat{};
 
 		newVideoFormat.cx = mVideoSignal.cx;
 		newVideoFormat.cy = mVideoSignal.cy;
@@ -747,7 +741,7 @@ HRESULT BlackmagicCaptureFilter::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 			mVideoFormat = newVideoFormat;
 			// TODO review allocations 
 			CComQIPtr<IDeckLinkVideoBuffer> buf(videoFrame);
-			mCurrentFrame = std::make_shared<VideoFrame>(mVideoFormat, frameTime, videoFrame->GetRowBytes(), mCapturedVideoFrameCount, buf);
+			mVideoFrame = std::make_shared<VideoFrame>(mVideoFormat, frameTime, videoFrame->GetRowBytes(), mCapturedVideoFrameCount, buf);
 		}
 
 		// signal listeners
@@ -755,14 +749,34 @@ HRESULT BlackmagicCaptureFilter::VideoInputFrameArrived(IDeckLinkVideoInputFrame
 		{
 			auto err = GetLastError();
 			#ifndef NO_QUILL
-			LOG_ERROR(mLogData.logger, "[{}] Failed to notify on frame {:#08x}", mLogData.prefix, err);
+			LOG_ERROR(mLogData.logger, "[{}] Failed to notify on video frame {:#08x}", mLogData.prefix, err);
 			#endif
 		}
 	}
 
 	if (audioPacket != nullptr)
 	{
-		
+		void* audioData = nullptr;
+		audioPacket->GetBytes(&audioData);
+
+		BMDTimeValue frameTime;
+		audioPacket->GetPacketTime(&frameTime, dshowTicksPerSecond);
+
+		AUDIO_FORMAT newAudioFormat{};
+		newAudioFormat.inputChannelCount = mDeviceInfo.audioChannelCount;
+		newAudioFormat.outputChannelCount = mDeviceInfo.audioChannelCount;
+
+		auto audioFrameLength = audioPacket->GetSampleFrameCount() * mDeviceInfo.audioChannelCount * (audioBitDepth / 8);
+		mAudioFrame = std::make_shared<AudioFrame>(frameTime, audioData, audioFrameLength, newAudioFormat);
+
+		// signal listeners
+		if (!SetEvent(mAudioFrameEvent))
+		{
+			auto err = GetLastError();
+			#ifndef NO_QUILL
+			LOG_ERROR(mLogData.logger, "[{}] Failed to notify on audio frame {:#08x}", mLogData.prefix, err);
+			#endif
+		}
 	}
 
 	return S_OK;
@@ -926,6 +940,7 @@ BlackmagicVideoCapturePin::BlackmagicVideoCapturePin(HRESULT* phr, BlackmagicCap
 
 BlackmagicVideoCapturePin::~BlackmagicVideoCapturePin()
 {
+	mCurrentFrame.reset();
 }
 
 HRESULT BlackmagicVideoCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFERENCE_TIME* pStartTime,
@@ -1040,7 +1055,7 @@ HRESULT BlackmagicVideoCapturePin::FillBuffer(IMediaSample* pms)
 	auto hr = pms->GetPointer(&out);
 	if (FAILED(hr))
 		return hr;
-	if (mCurrentFrame->GetLength() != pms->GetSize())
+	if (mCurrentFrame->GetLength() > pms->GetSize())
 		return S_FALSE;
 
 	memcpy(out, mCurrentFrame->GetData(), mCurrentFrame->GetLength());
@@ -1106,9 +1121,9 @@ void BlackmagicVideoCapturePin::LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat
 
 }
 
-HRESULT BlackmagicVideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat)
+void BlackmagicVideoCapturePin::OnChangeMediaType() const
 {
-	return S_OK;
+	mFilter->NotifyEvent(EC_VIDEO_SIZE_CHANGED, MAKELPARAM(mVideoFormat.cx, mVideoFormat.cy), 0);
 }
 
 ///////////////////////////////////////////////////////////
@@ -1130,9 +1145,109 @@ BlackmagicAudioCapturePin::~BlackmagicAudioCapturePin()
 }
 
 HRESULT BlackmagicAudioCapturePin::GetDeliveryBuffer(IMediaSample** ppSample, REFERENCE_TIME* pStartTime,
-                                                     REFERENCE_TIME* pEndTime, DWORD dwFlags)
+	REFERENCE_TIME* pEndTime, DWORD dwFlags)
 {
-	return HdmiAudioCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
+	auto hasFrame = false;
+	auto retVal = S_FALSE;
+	auto handle = mFilter->GetAudioFrameHandle();
+	// keep going til we have a frame to process
+	while (!hasFrame)
+	{
+		auto frameCopied = false;
+		if (CheckStreamState(nullptr) == STREAM_DISCARDING)
+		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogData.logger, "[{}] Stream is discarding", mLogData.prefix);
+			#endif
+
+			break;
+		}
+
+		if (mStreamStartTime == 0)
+		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogData.logger, "[{}] Stream has not started, retry after backoff", mLogData.prefix);
+			#endif
+
+			BACKOFF;
+			continue;
+		}
+
+		// grab next frame 
+		DWORD dwRet = WaitForSingleObject(handle, 1000);
+
+		// unknown, try again
+		if (dwRet == WAIT_FAILED)
+		{
+			#ifndef NO_QUILL
+			LOG_TRACE_L1(mLogData.logger, "[{}] Wait for frame failed, retrying", mLogData.prefix);
+			#endif
+			continue;
+		}
+
+		if (dwRet == WAIT_OBJECT_0)
+		{
+			mCurrentFrame = mFilter->GetAudioFrame();
+			auto newAudioFormat = mCurrentFrame->GetFormat();
+			if (newAudioFormat.outputChannelCount == 0)
+			{
+				#ifndef NO_QUILL
+				LOG_TRACE_L1(mLogData.logger, "[{}] No output channels in signal, retry after backoff", mLogData.prefix);
+				#endif
+
+				mSinceLast = 0;
+
+				BACKOFF;
+				continue;
+			}
+
+			// detect format changes
+			if (ShouldChangeMediaType(&newAudioFormat))
+			{
+				#ifndef NO_QUILL
+				LOG_WARNING(mLogData.logger, "[{}] AudioFormat changed! Attempting to reconnect", mLogData.prefix);
+				#endif
+
+				CMediaType proposedMediaType(m_mt);
+				AudioFormatToMediaType(&proposedMediaType, &newAudioFormat);
+				auto hr = DoChangeMediaType(&proposedMediaType, &newAudioFormat);
+				if (FAILED(hr))
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogData.logger,
+						"[{}] AudioFormat changed but not able to reconnect ({:#08x}) retry after backoff",
+						mLogData.prefix, hr);
+					#endif
+
+					// TODO communicate that we need to change somehow
+					BACKOFF;
+					continue;
+				}
+
+				mFilter->OnAudioFormatLoaded(&mAudioFormat);
+			}
+
+			if (newAudioFormat.codec == PCM)
+			{
+				retVal = AudioCapturePin::GetDeliveryBuffer(ppSample, pStartTime, pEndTime, dwFlags);
+				if (SUCCEEDED(retVal))
+				{
+					hasFrame = true;
+				}
+				else
+				{
+					#ifndef NO_QUILL
+					LOG_WARNING(mLogData.logger,
+						"[{}] Audio frame buffered but unable to get delivery buffer, retry after backoff",
+						mLogData.prefix);
+					#endif
+				}
+			}
+		}
+		if (!hasFrame)
+			SHORT_BACKOFF;
+	}
+	return retVal;
 }
 
 HRESULT BlackmagicAudioCapturePin::OnThreadCreate()
@@ -1148,20 +1263,72 @@ HRESULT BlackmagicAudioCapturePin::OnThreadCreate()
 
 HRESULT BlackmagicAudioCapturePin::FillBuffer(IMediaSample* pms)
 {
-	return S_OK;
-}
+	auto retVal = S_OK;
 
-void BlackmagicAudioCapturePin::LoadFormat(AUDIO_FORMAT* audioFormat, const AUDIO_SIGNAL* audioSignal) const
-{
+	if (CheckStreamState(nullptr) == STREAM_DISCARDING)
+	{
+		#ifndef NO_QUILL
+		LOG_TRACE_L1(mLogData.logger, "[{}] Stream is discarding", mLogData.prefix);
+		#endif
+
+		return S_FALSE;
+	}
+	BYTE* pmsData;
+	pms->GetPointer(&pmsData);
+
+	long size = mCurrentFrame->GetLength();
+	memcpy(pmsData, mCurrentFrame->GetData(), size);
+
+	auto endTime = mCurrentFrame->GetFrameTime();
+	auto sampleLength = mAudioFormat.bitDepthInBytes * mAudioFormat.outputChannelCount;
+	auto sampleCount = size / sampleLength;
+	auto frameDuration = mAudioFormat.sampleInterval * sampleCount;
+	auto startTime = endTime - static_cast<int64_t>(frameDuration);
+
+	mCurrentFrame.reset();
+
+	pms->SetTime(&startTime, &endTime);
+	pms->SetSyncPoint(true);
+	pms->SetDiscontinuity(false);
+	if (mSendMediaType)
+	{
+		CMediaType cmt(m_mt);
+		AM_MEDIA_TYPE* sendMediaType = CreateMediaType(&cmt);
+		pms->SetMediaType(sendMediaType);
+		DeleteMediaType(sendMediaType);
+		mSendMediaType = FALSE;
+	}
+	if (S_FALSE == HandleStreamStateChange(pms))
+	{
+		retVal = S_FALSE;
+	}
+	return retVal;
 }
 
 HRESULT BlackmagicAudioCapturePin::DoChangeMediaType(const CMediaType* pmt, const AUDIO_FORMAT* newAudioFormat)
 {
-	return S_OK;
+	#ifndef NO_QUILL
+	LOG_WARNING(mLogData.logger, "[{}] Proposing new audio format Fs: {} Bits: {} Channels: {} Codec: {}",
+		mLogData.prefix,
+		newAudioFormat->fs, newAudioFormat->bitDepth, newAudioFormat->outputChannelCount,
+		codecNames[newAudioFormat->codec]);
+	#endif
+	long newSize = 192 * newAudioFormat->bitDepthInBytes * newAudioFormat->outputChannelCount;
+	long oldSize = 192 * mAudioFormat.bitDepthInBytes * mAudioFormat.outputChannelCount;
+	auto shouldRenegotiateOnQueryAccept = newSize != oldSize || mAudioFormat.codec != newAudioFormat->codec;
+	auto retVal = RenegotiateMediaType(pmt, newSize, shouldRenegotiateOnQueryAccept);
+	return retVal;
 }
 
 bool BlackmagicAudioCapturePin::ProposeBuffers(ALLOCATOR_PROPERTIES* pProperties)
 {
+	// TODO buffer size?
+	pProperties->cbBuffer = 192 * mAudioFormat.bitDepthInBytes * mAudioFormat.outputChannelCount;
+	if (pProperties->cBuffers < 1)
+	{
+		pProperties->cBuffers = 16;
+		return false;
+	}
 	return true;
 }
 

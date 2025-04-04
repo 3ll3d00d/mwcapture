@@ -1080,6 +1080,31 @@ bool VideoCapturePin::ShouldChangeMediaType(VIDEO_FORMAT* newVideoFormat)
 	return reconnect;
 }
 
+HRESULT VideoCapturePin::DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat)
+{
+	#ifndef NO_QUILL
+	LOG_WARNING(
+		mLogData.logger,
+		"[{}] Proposing new video format {} x {} ({}:{}) @ {:.3f} Hz in {} bits ({} {} tf: {}) size {} bytes",
+		mLogData.prefix,
+		newVideoFormat->cx, newVideoFormat->cy, newVideoFormat->aspectX, newVideoFormat->aspectY, newVideoFormat->fps,
+		newVideoFormat->bitDepth,
+		newVideoFormat->pixelStructureName, newVideoFormat->colourFormatName, newVideoFormat->hdrMeta.transferFunction,
+		newVideoFormat->imageSize);
+	#endif
+
+	auto retVal = RenegotiateMediaType(pmt, newVideoFormat->imageSize,
+		newVideoFormat->imageSize != mVideoFormat.imageSize);
+	if (retVal == S_OK)
+	{
+		mVideoFormat = *newVideoFormat;
+		OnChangeMediaType();
+	}
+
+	return retVal;
+
+}
+
 HRESULT VideoCapturePin::GetMediaType(CMediaType* pmt)
 {
 	VideoFormatToMediaType(pmt, &mVideoFormat);

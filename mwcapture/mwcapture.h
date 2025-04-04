@@ -204,7 +204,7 @@ protected:
     static void CaptureFrame(BYTE* pbFrame, int cbFrame, UINT64 u64TimeStamp, void* pParam);
 
 	void LogHdrMetaIfPresent(VIDEO_FORMAT* newVideoFormat);
-    HRESULT DoChangeMediaType(const CMediaType* pmt, const VIDEO_FORMAT* newVideoFormat);
+    void OnChangeMediaType();
     HRESULT LoadSignal(HCHANNEL* pChannel);
 
 	// Encapsulates pinning the IMediaSample buffer into video memory (and unpinning on destruct)
