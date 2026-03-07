@@ -37,14 +37,19 @@ static std::string wstring_to_string(const std::wstring& input)
 		auto empty = std::string{};
 		return empty;
 	}
-	int size = WideCharToMultiByte(CP_ACP, 0, input.c_str(), input.size(), nullptr, 0, nullptr, nullptr);
+    int size = WideCharToMultiByte(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()), nullptr, 0, nullptr, nullptr);
 	if (size <= 0)
 	{
 		auto empty = std::string{};
 		return empty;
 	}
-	std::vector<char> outChars(input.length() + 1);
-	if (WideCharToMultiByte(CP_ACP, 0, input.c_str(), input.size(), outChars.data(), size, nullptr, nullptr) <= 0)
+    if (size <= 0)
+	{
+		auto empty = std::string{};
+		return empty;
+	}
+	std::vector<char> outChars(static_cast<size_t>(size) + 1);
+	if (WideCharToMultiByte(CP_ACP, 0, input.c_str(), static_cast<int>(input.size()), outChars.data(), size, nullptr, nullptr) <= 0)
 	{
 		outChars.clear();
 		auto empty = std::string{};

@@ -275,3 +275,4 @@ git_hash.h
 venv/
 
 vcpkg_installed/
+.github/upgrades/scenarios

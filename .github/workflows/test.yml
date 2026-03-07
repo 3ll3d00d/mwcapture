@@ -12,14 +12,14 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     strategy:
       fail-fast: false
       matrix:
         configuration: [ Debug, Release, ReleaseTrace, ReleaseNoArch, ReleaseTraceNoArch ]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v2
