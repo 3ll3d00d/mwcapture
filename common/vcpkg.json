@@ -1,6 +1,6 @@
 {
   "dependencies": [
     "quill",
-	"winreg"
+    "winreg"
   ]
 }
