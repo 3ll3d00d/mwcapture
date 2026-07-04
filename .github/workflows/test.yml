@@ -43,3 +43,32 @@ jobs:
       working-directory: ${{ env.GITHUB_WORKSPACE }}
       run: |
         msbuild /t:Rebuild /p:Configuration=${{ matrix.configuration }}
+
+  build-cmake:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [ debug, release, release-noarch, release-trace, release-trace-noarch ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSVC dev environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Ensure vcpkg toolchain present
+      shell: pwsh
+      run: |
+        if (-not (Test-Path "C:\vcpkg\scripts\buildsystems\vcpkg.cmake")) {
+          git clone https://github.com/microsoft/vcpkg C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        }
+
+    - name: Configure (${{ matrix.preset }})
+      run: cmake --preset ${{ matrix.preset }}
+
+    - name: Build (${{ matrix.preset }})
+      run: cmake --build --preset ${{ matrix.preset }}
