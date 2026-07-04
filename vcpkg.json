@@ -1,0 +1,9 @@
+{
+  "name": "ezcapture",
+  "version-string": "0.0.0",
+  "dependencies": [
+    "quill",
+    "winreg",
+    "gtest"
+  ]
+}

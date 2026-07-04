@@ -1,0 +1,53 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "toolchainFile": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "Debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "Release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "release-noarch",
+      "inherits": "base",
+      "displayName": "Release (no AVX2)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "EZ_ENABLE_AVX2": "OFF" }
+    },
+    {
+      "name": "release-trace",
+      "inherits": "base",
+      "displayName": "Release (trace logging)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "EZ_ENABLE_TRACE": "ON" }
+    },
+    {
+      "name": "release-trace-noarch",
+      "inherits": "base",
+      "displayName": "Release (trace logging, no AVX2)",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "EZ_ENABLE_TRACE": "ON", "EZ_ENABLE_AVX2": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "release-noarch", "configurePreset": "release-noarch" },
+    { "name": "release-trace", "configurePreset": "release-trace" },
+    { "name": "release-trace-noarch", "configurePreset": "release-trace-noarch" }
+  ]
+}

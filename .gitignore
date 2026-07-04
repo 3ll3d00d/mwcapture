@@ -275,3 +275,8 @@ git_hash.h
 venv/
 
 vcpkg_installed/
+
+# CMake / CLion
+/out/
+cmake-build-*/
+CMakeUserPresets.json
